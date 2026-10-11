@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Welk dier klopt niet?</title>
+<style>
+  :root { --ink: #3a2e5c; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; height: 100%; overflow: hidden; background: #fff6e0; color: var(--ink);
+    overscroll-behavior: none; touch-action: manipulation;
+    user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+    font-family: ui-rounded, "Nunito", system-ui, sans-serif;
+  }
+  main {
+    height: 100dvh; display: flex; flex-direction: column; gap: 10px;
+    padding: max(12px, env(safe-area-inset-top)) 12px max(12px, env(safe-area-inset-bottom));
+    max-width: 720px; margin: 0 auto;
+  }
+  .listen { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 12px; }
+  .answer { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .divider { text-align: center; font-size: 7vmin; line-height: 1; }
+  button { font: inherit; color: inherit; border: 0; padding: 0; cursor: pointer; }
+  .tile, .ans {
+    position: relative; background: var(--c); display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 .8vmin 0 rgb(0 0 0 / .15); transition: transform .1s, box-shadow .1s, filter .3s;
+  }
+  .tile { border-radius: 28px; font-size: min(30vw, 17dvh); line-height: 1; }
+  .ans { border-radius: 22px; aspect-ratio: 1; font-size: min(13vw, 9dvh); line-height: 1; }
+  .tile:active, .ans:active { transform: translateY(.6vmin); box-shadow: 0 .2vmin 0 rgb(0 0 0 / .15); }
+  .tile.play { animation: bounce .45s; }
+  .grey { filter: grayscale(1) brightness(.9); opacity: .6; }
+  .ans.grey { pointer-events: none; animation: shake .4s; }
+  .ans.right { background: #7be08a; box-shadow: 0 .8vmin 0 #3fa84f; }
+  .badge {
+    position: absolute; right: 6%; bottom: 6%; width: 36%; aspect-ratio: 1; border-radius: 50%;
+    background: #fff; display: flex; align-items: center; justify-content: center;
+    font-size: min(11vw, 6.5dvh); animation: pop .4s;
+  }
+  @keyframes bounce { 30% { transform: scale(1.1) rotate(-4deg); } 60% { transform: scale(.96) rotate(3deg); } }
+  @keyframes shake { 25% { transform: translateX(-8px); } 75% { transform: translateX(8px); } }
+  @keyframes pop { from { transform: scale(0); } }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 5; }
+  .overlay {
+    position: fixed; inset: 0; z-index: 10; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 3vmin; background: rgb(255 246 224 / .97); text-align: center;
+  }
+  .overlay.hidden { display: none; }
+  .icons { font-size: min(14vmin, 90px); letter-spacing: 1vmin; }
+  #start {
+    width: min(34vmin, 190px); height: min(34vmin, 190px); border-radius: 50%; background: #4cc35a; color: #fff;
+    font-size: min(18vmin, 100px); padding-left: 1vmin; box-shadow: 0 1.4vmin 0 #2f8f3b; animation: pulse 1.2s infinite;
+  }
+  @keyframes pulse { 50% { transform: scale(1.06); } }
+  #home {
+    position: fixed; top: max(8px, env(safe-area-inset-top)); right: max(8px, env(safe-area-inset-right)); z-index: 15;
+    width: 44px; height: 44px; border-radius: 50%; background: rgb(255 255 255 / .5); font-size: 22px; opacity: .6; touch-action: none;
+  }
+  #home::after { content: ""; position: absolute; inset: -3px; border-radius: 50%; border: 4px solid var(--ink); opacity: 0; clip-path: inset(0 100% 0 0); }
+  #home.hold::after { opacity: 1; clip-path: inset(0 0 0 0); transition: clip-path .9s linear; }
+  @media (orientation: landscape) {
+    .listen { grid-template-columns: repeat(4, 1fr); grid-template-rows: 1fr; }
+    .tile { font-size: min(14vw, 28dvh); }
+    .ans { aspect-ratio: auto; height: 24dvh; font-size: min(7vw, 14dvh); }
+    .divider { font-size: 7dvh; }
+  }
+  @media (prefers-reduced-motion: reduce) { .tile.play, .ans.grey, .badge, #start { animation: none; } }
+</style>
+</head>
+<body>
+<main>
+  <div class="listen" id="listen"></div>
+  <div class="divider">❓</div>
+  <div class="answer" id="answer"></div>
+</main>
+<canvas id="fx"></canvas>
+<button id="home" aria-label="Terug">🏠</button>
+<div class="overlay" id="title">
+  <div class="icons">🐮🐱🐶</div>
+  <button id="start" aria-label="Start">▶</button>
+  <div class="icons">🔊</div>
+</div>
+
+<script>
+'use strict';
+
+const ANIMALS = [
+  { id: 'paard', emoji: '🐴', color: '#e6c9a8' },
+  { id: 'kikker', emoji: '🐸', color: '#bfe8a0' },
+  { id: 'poes', emoji: '🐱', color: '#ffd8b0' },
+  { id: 'hond', emoji: '🐶', color: '#f3d3a2' },
+  { id: 'vogeltje', emoji: '🐦', color: '#b8e6ff' },
+  { id: 'koe', emoji: '🐮', color: '#e7e1ff' },
+  { id: 'varken', emoji: '🐷', color: '#ffc7da' },
+  { id: 'muis', emoji: '🐭', color: '#f5d6f5' },
+  { id: 'geit', emoji: '🐐', color: '#f4eccf' },
+  { id: 'olifant', emoji: '🐘', color: '#cfe8d6' },
+  { id: 'kip', emoji: '🐔', color: '#ffe48a' },
+  { id: 'slang', emoji: '🐍', color: '#c4f0a8' },
+  { id: 'leeuw', emoji: '🦁', color: '#ffd37a' },
+  { id: 'aap', emoji: '🐵', color: '#e8c3a0' },
+];
+const byId = Object.fromEntries(ANIMALS.map(a => [a.id, a]));
+const rnd = (a, b) => a + Math.random() * (b - a);
+const pick = a => a[Math.floor(Math.random() * a.length)];
+const shuffle = a => a.map(v => [Math.random(), v]).sort((x, y) => x[0] - y[0]).map(x => x[1]);
+
+// ---------- geluid ----------
+let AC = null, master = null, noiseBuf = null;
+const samples = {};            // dier -> [AudioBuffer]  (echte opnames uit geluiden/manifest.json, optioneel)
+
+function initAudio() {
+  try {
+    AC = new (window.AudioContext || window.webkitAudioContext)();
+    const comp = AC.createDynamicsCompressor(); master = AC.createGain(); master.gain.value = .8;
+    master.connect(comp); comp.connect(AC.destination);
+    noiseBuf = AC.createBuffer(1, AC.sampleRate, AC.sampleRate);
+    const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    AC.resume();
+    // iOS: stil audio-element, zodat het geluid ook klinkt met de stilteknop aan
+    const a = new Audio('data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAAA');
+    a.loop = true; a.play().catch(() => {});
+    loadSamples();
+  } catch (e) { AC = null; }
+}
+async function loadSamples() {
+  try {
+    const m = await (await fetch('geluiden/manifest.json')).json();
+    for (const [id, files] of Object.entries(m)) {
+      const bufs = await Promise.all(files.map(async f => {
+        try { return await AC.decodeAudioData(await (await fetch('geluiden/' + f)).arrayBuffer()); } catch (e) { return null; }
+      }));
+      samples[id] = bufs.filter(Boolean);
+    }
+  } catch (e) { /* geen manifest: synthesizer */ }
+}
+
+// Eén "stem": zaagtand/blok/sinus door twee formant-filters, met glijdende toonhoogte.
+function voice(t, o) {
+  const dur = o.dur, type = o.type || 'sawtooth', gain = o.gain ?? .4, att = o.att ?? .02;
+  const osc = AC.createOscillator(); osc.type = type;
+  osc.frequency.setValueAtTime(o.f0, t);
+  if (o.fm) osc.frequency.linearRampToValueAtTime(o.fm, t + dur * .5);
+  osc.frequency.linearRampToValueAtTime(o.f1 ?? o.f0, t + dur);
+  if (o.vib) {
+    const l = AC.createOscillator(), lg = AC.createGain(); l.frequency.value = o.vib; lg.gain.value = o.vibD || 10;
+    l.connect(lg); lg.connect(osc.frequency); l.start(t); l.stop(t + dur + .05);
+  }
+  const env = AC.createGain();
+  env.gain.setValueAtTime(0.0001, t); env.gain.linearRampToValueAtTime(gain, t + att);
+  env.gain.setValueAtTime(gain, t + Math.max(att, dur * .6)); env.gain.exponentialRampToValueAtTime(.001, t + dur);
+  let out = env;
+  if (o.am) {                                    // snelle volumegolf (blaten, kwaken, brullen)
+    const amg = AC.createGain(); amg.gain.value = .55;
+    const l = AC.createOscillator(), lg = AC.createGain(); l.frequency.value = o.am; lg.gain.value = .45;
+    l.connect(lg); lg.connect(amg.gain); l.start(t); l.stop(t + dur + .05);
+    env.connect(amg); out = amg;
+  }
+  const src = [osc];
+  let noise = null;
+  if (o.noise) { noise = AC.createBufferSource(); noise.buffer = noiseBuf; noise.loop = true; src.push(noise); }
+  const forms = o.form || [];
+  if (!forms.length) { osc.connect(env); }
+  for (const fm of forms) {
+    const f = AC.createBiquadFilter(); f.type = 'bandpass'; f.Q.value = fm.q || 5;
+    f.frequency.setValueAtTime(fm.f[0], t); f.frequency.linearRampToValueAtTime(fm.f[1], t + dur);
+    const g = AC.createGain(); g.gain.value = (fm.g ?? 1) * 1.6;
+    osc.connect(f);
+    if (noise) { const ng = AC.createGain(); ng.gain.value = o.noise; noise.connect(ng); ng.connect(f); }
+    f.connect(g); g.connect(env);
+  }
+  out.connect(master);
+  osc.start(t); osc.stop(t + dur + .05);
+  if (noise) { noise.start(t); noise.stop(t + dur + .05); }
+}
+function hiss(t, dur, gain) {
+  const s = AC.createBufferSource(), f = AC.createBiquadFilter(), g = AC.createGain();
+  s.buffer = noiseBuf; s.loop = true; f.type = 'highpass'; f.frequency.value = 3800;
+  g.gain.setValueAtTime(.001, t); g.gain.linearRampToValueAtTime(gain, t + dur * .35); g.gain.exponentialRampToValueAtTime(.001, t + dur);
+  s.connect(f); f.connect(g); g.connect(master); s.start(t); s.stop(t + dur + .05);
+}
+
+// Vier varianten per dier: toonhoogte (PM), tempo (ST) en aantal herhalingen verschillen.
+const PM = [1, .86, 1.16, .96], ST = [1, 1.2, .88, 1.08];
+const SYNTH = {
+  hond(t, v) { const n = [1, 2, 2, 3][v]; for (let i = 0; i < n; i++) voice(t + i * .24 * ST[v], { f0: 280 * PM[v], f1: 150 * PM[v], dur: .17, gain: .55, noise: .15, form: [{ f: [750, 500], q: 6 }, { f: [1400, 1000], q: 8 }] }); },
+  poes(t, v) { const s = v === 3 ? .55 : 1; voice(t, { f0: 560 * PM[v], fm: 900 * PM[v], f1: 520 * PM[v], dur: .8 * ST[v] * s, att: .08, gain: .5, vib: 6, vibD: 12, form: [{ f: [380, 900], q: 7 }, { f: [2300, 1100], q: 8 }] }); },
+  koe(t, v) { voice(t, { f0: 135 * PM[v], f1: 105 * PM[v], dur: 1.4 * ST[v], att: .2, gain: .7, vib: 5, vibD: 3, form: [{ f: [380, 560], q: 5 }, { f: [800, 1000], q: 6 }] }); },
+  paard(t, v) { voice(t, { f0: 600 * PM[v], fm: 1050 * PM[v], f1: 350 * PM[v], dur: 1.1 * ST[v], att: .05, gain: .5, vib: 14, vibD: 35, noise: .3, form: [{ f: [900, 1500], q: 4 }, { f: [2000, 2600], q: 5 }] }); },
+  kikker(t, v) { const n = [2, 3, 2, 3][v]; for (let i = 0; i < n; i++) voice(t + i * .3 * ST[v], { type: 'square', f0: 150 * PM[v], f1: 105 * PM[v], dur: .2, gain: .35, am: 45, form: [{ f: [500, 800], q: 5 }, { f: [1500, 1800], q: 6 }] }); },
+  vogeltje(t, v) { const n = [3, 4, 5, 3][v]; for (let i = 0; i < n; i++) voice(t + i * .13 * ST[v], { type: 'sine', f0: (i % 2 ? 2600 : 3100) * PM[v], f1: (i % 2 ? 3600 : 4400) * PM[v], dur: .09, gain: .2 }); },
+  varken(t, v) { const n = [2, 3, 2, 1][v]; for (let i = 0; i < n; i++) voice(t + i * .36 * ST[v], { f0: 150 * PM[v], f1: 90 * PM[v], dur: .28, gain: .55, am: 30, noise: .35, form: [{ f: [500, 350], q: 4 }, { f: [1100, 800], q: 5 }] }); },
+  muis(t, v) { const n = [3, 4, 2, 3][v]; for (let i = 0; i < n; i++) voice(t + i * .12 * ST[v], { type: 'sine', f0: 3300 * PM[v], f1: 3900 * PM[v], dur: .08, gain: .16, vib: 40, vibD: 120 }); },
+  geit(t, v) { voice(t, { f0: 330 * PM[v], f1: 295 * PM[v], dur: .95 * ST[v], att: .05, gain: .55, am: 26, form: [{ f: [800, 1100], q: 5 }, { f: [1500, 1700], q: 6 }] }); },
+  olifant(t, v) { voice(t, { f0: 260 * PM[v], fm: 520 * PM[v], f1: 340 * PM[v], dur: 1.2 * ST[v], att: .1, gain: .55, vib: 10, vibD: 12, noise: .25, form: [{ f: [600, 1100], q: 4 }, { f: [1400, 2000], q: 5 }] }); },
+  kip(t, v) { const n = [4, 5, 3, 4][v]; for (let i = 0; i < n; i++) voice(t + i * .12 * ST[v] + (i % 2) * .03, { f0: 540 * PM[v], f1: 380 * PM[v], dur: .07, gain: .45, noise: .1, form: [{ f: [900, 800], q: 5 }, { f: [1800, 1500], q: 6 }] }); },
+  slang(t, v) { hiss(t, 1.3 * ST[v], .25 + v * .03); if (v === 1) hiss(t + 1.1, .5, .12); },
+  leeuw(t, v) { voice(t, { f0: 105 * PM[v], f1: 55 * PM[v], dur: 1.7 * ST[v], att: .1, gain: .8, am: 24, noise: .35, form: [{ f: [500, 350], q: 3 }, { f: [900, 700], q: 4 }] }); },
+  aap(t, v) { const n = [3, 4, 3, 4][v]; for (let i = 0; i < n; i++) voice(t + i * .2 * ST[v], { f0: 430 * PM[v], f1: 380 * PM[v], dur: .14, gain: .5, form: [{ f: [350, 350], q: 6 }, { f: [800, 800], q: 6 }] });
+    voice(t + n * .2 * ST[v], { f0: 520 * PM[v], f1: 420 * PM[v], dur: .35, gain: .5, form: [{ f: [800, 800], q: 6 }, { f: [1200, 1100], q: 6 }] }); },
+};
+function playAnimal(id) {
+  if (!AC) return;
+  AC.resume();
+  const s = samples[id];
+  if (s && s.length) {
+    const src = AC.createBufferSource(); src.buffer = pick(s); src.connect(master); src.start();
+  } else SYNTH[id](AC.currentTime + .01, Math.floor(Math.random() * 4));
+}
+function tone(f0, f1, dur, vol, type = 'sine', delay = 0) {
+  if (!AC) return;
+  const t = AC.currentTime + delay, o = AC.createOscillator(), g = AC.createGain();
+  o.type = type; o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(f1, t + dur);
+  g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(.001, t + dur);
+  o.connect(g); g.connect(master); o.start(t); o.stop(t + dur);
+}
+const sfx = {
+  wrong() { tone(300, 150, .3, .25, 'triangle'); },
+  win() { [523, 659, 784, 1047, 1319].forEach((f, i) => tone(f, f, .35, .2, 'triangle', i * .12)); },
+};
+
+// ---------- spel ----------
+const listenEl = document.getElementById('listen'), answerEl = document.getElementById('answer');
+const tiles = [], answers = [];
+for (let i = 0; i < 4; i++) {
+  const t = document.createElement('button'); t.className = 'tile'; t.addEventListener('click', () => playTile(i)); listenEl.appendChild(t); tiles.push(t);
+  const a = document.createElement('button'); a.className = 'ans'; a.addEventListener('click', () => answer(i)); answerEl.appendChild(a); answers.push(a);
+}
+let round = null, prevIds = [], nextTimer = 0;
+
+function newRound() {
+  clearTimeout(nextTimer);
+  let pool = ANIMALS.filter(a => !prevIds.includes(a.id));
+  if (pool.length < 4) pool = ANIMALS;
+  const animals = shuffle(pool).slice(0, 4);
+  const odd = Math.floor(Math.random() * 4);
+  const wrong = pick(ANIMALS.filter(a => !animals.includes(a)));      // geluid van een dier dat er niet bij staat
+  round = { animals, odd, wrong, done: false };
+  prevIds = animals.map(a => a.id);
+  animals.forEach((a, i) => {
+    for (const el of [tiles[i], answers[i]]) {
+      el.className = el === tiles[i] ? 'tile' : 'ans'; el.style.setProperty('--c', a.color); el.textContent = a.emoji; el.setAttribute('aria-label', a.id);
+    }
+  });
+}
+function playTile(i) {
+  if (!round) return;
+  const el = tiles[i]; el.classList.remove('play'); void el.offsetWidth; el.classList.add('play');
+  playAnimal(i === round.odd ? round.wrong.id : round.animals[i].id);
+}
+function answer(i) {
+  if (!round || round.done) return;
+  if (i !== round.odd) {                          // fout: dit dier wordt grijs
+    answers[i].classList.add('grey'); tiles[i].classList.add('grey'); sfx.wrong(); return;
+  }
+  round.done = true;
+  answers[i].classList.add('right');
+  const b = document.createElement('div'); b.className = 'badge'; b.textContent = round.wrong.emoji; tiles[i].appendChild(b);
+  sfx.win(); confettiBurst();
+  setTimeout(() => playAnimal(round.wrong.id), 700);
+  nextTimer = setTimeout(newRound, 3200);
+}
+
+// ---------- confetti ----------
+const fx = document.getElementById('fx'), fctx = fx.getContext('2d');
+let parts = [], running = false;
+function resizeFx() { fx.width = innerWidth * devicePixelRatio; fx.height = innerHeight * devicePixelRatio; }
+addEventListener('resize', resizeFx); resizeFx();
+function confettiBurst() {
+  const colors = ['#ff5c5c', '#ffd23f', '#4cc35a', '#4aa8ff', '#c77dff', '#ff9f43'];
+  for (let i = 0; i < 140; i++) parts.push({ x: rnd(0, innerWidth), y: rnd(-innerHeight * .3, 0), vx: rnd(-60, 60), vy: rnd(200, 520), r: rnd(0, 6), vr: rnd(-8, 8), w: rnd(8, 14), h: rnd(5, 9), c: pick(colors) });
+  if (!running) { running = true; last = performance.now(); requestAnimationFrame(fxLoop); }
+}
+let last = 0;
+function fxLoop(now) {
+  const dt = Math.min((now - last) / 1000, .05); last = now;
+  fctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0); fctx.clearRect(0, 0, innerWidth, innerHeight);
+  for (const p of parts) { p.vy = Math.min(p.vy + 400 * dt, 480); p.x += (p.vx + Math.sin(p.r * 2) * 50) * dt; p.y += p.vy * dt; p.r += p.vr * dt;
+    fctx.save(); fctx.translate(p.x, p.y); fctx.rotate(p.r); fctx.fillStyle = p.c; fctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h); fctx.restore(); }
+  parts = parts.filter(p => p.y < innerHeight + 30);
+  if (parts.length) requestAnimationFrame(fxLoop); else { running = false; fctx.clearRect(0, 0, innerWidth, innerHeight); }
+}
+
+// ---------- start / ouder-knop ----------
+function start() { document.getElementById('title').classList.add('hidden'); initAudio(); newRound(); }
+document.getElementById('start').addEventListener('click', start);
+const home = document.getElementById('home'); let homeTimer = 0;
+home.addEventListener('pointerdown', () => { home.classList.add('hold'); homeTimer = setTimeout(() => location.href = '../../index.html', 900); });
+['pointerup', 'pointerleave', 'pointercancel'].forEach(ev => home.addEventListener(ev, () => { home.classList.remove('hold'); clearTimeout(homeTimer); }));
+document.addEventListener('contextmenu', e => e.preventDefault());
+document.addEventListener('visibilitychange', () => { if (AC) { if (document.hidden) AC.suspend(); else AC.resume(); } });
+newRound();   // achtergrond achter het startscherm
+
+// testmodus: ?auto speelt een paar rondes zelf (fout, dan goed) en logt het resultaat in de titel
+if (/[?&]auto/.test(location.search)) {
+  document.getElementById('title').classList.add('hidden');
+  const log = [];
+  for (let r = 0; r < 20; r++) {
+    newRound();
+    const ok = new Set(round.animals.map(a => a.id)).size === 4 && !round.animals.includes(round.wrong) && round.odd >= 0 && round.odd < 4;
+    const wrongI = (round.odd + 1) % 4; answer(wrongI);
+    const greyed = answers[wrongI].classList.contains('grey');
+    answer(round.odd);
+    log.push(ok && greyed && round.done ? 'ok' : 'FOUT');
+  }
+  clearTimeout(nextTimer); newRound();
+  try {   // alle geluiden (14 dieren x 4 varianten) offline renderen om fouten te vangen
+    AC = new OfflineAudioContext(1, 44100 * 4, 44100); master = AC.createGain(); master.connect(AC.destination);
+    noiseBuf = AC.createBuffer(1, 44100, 44100);
+    for (const a of ANIMALS) for (let v = 0; v < 4; v++) SYNTH[a.id](.01, v);
+    log.push('synth-ok');
+  } catch (e) { log.push('SYNTH-FOUT ' + e.message); }
+  AC = null; master = null;
+  document.title = log.join(',');
+}
+</script>
+</body>
+</html>
