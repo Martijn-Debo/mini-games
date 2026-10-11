@@ -22,7 +22,9 @@
   }
   .listen { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 12px; }
   .answer { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
-  .divider { text-align: center; font-size: 7vmin; line-height: 1; }
+  .divider { text-align: center; }
+  .divider hr { border: 0; height: 4px; border-radius: 2px; background: rgb(58 46 92 / .25); margin: 2px 0 8px; }
+  .divider p { margin: 0; font-size: clamp(16px, 5vw, 26px); font-weight: 800; line-height: 1.2; }
   button { font: inherit; color: inherit; border: 0; padding: 0; cursor: pointer; }
   .tile, .ans {
     position: relative; background: var(--c); display: flex; align-items: center; justify-content: center;
@@ -65,7 +67,7 @@
     .listen { grid-template-columns: repeat(4, 1fr); grid-template-rows: 1fr; }
     .tile { font-size: min(14vw, 28dvh); }
     .ans { aspect-ratio: auto; height: 24dvh; font-size: min(7vw, 14dvh); }
-    .divider { font-size: 7dvh; }
+    .divider p { font-size: clamp(14px, 5dvh, 24px); }
   }
   @media (prefers-reduced-motion: reduce) { .tile.play, .ans.grey, .badge, #start { animation: none; } }
 </style>
@@ -73,7 +75,7 @@
 <body>
 <main>
   <div class="listen" id="listen"></div>
-  <div class="divider">❓</div>
+  <div class="divider"><hr><p>Welk dier maakt het verkeerde geluid?</p></div>
   <div class="answer" id="answer"></div>
 </main>
 <canvas id="fx"></canvas>
@@ -108,14 +110,14 @@ const pick = a => a[Math.floor(Math.random() * a.length)];
 const shuffle = a => a.map(v => [Math.random(), v]).sort((x, y) => x[0] - y[0]).map(x => x[1]);
 
 // ---------- geluid ----------
-let AC = null, master = null, noiseBuf = null;
+let AC = null, master = null, noiseBuf = null, bus = null, playToken = 0;
 const samples = {};            // dier -> [AudioBuffer]  (echte opnames uit geluiden/manifest.json, optioneel)
 
 function initAudio() {
   try {
     AC = new (window.AudioContext || window.webkitAudioContext)();
     const comp = AC.createDynamicsCompressor(); master = AC.createGain(); master.gain.value = .8;
-    master.connect(comp); comp.connect(AC.destination);
+    master.connect(comp); comp.connect(AC.destination); newBus();
     noiseBuf = AC.createBuffer(1, AC.sampleRate, AC.sampleRate);
     const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
     AC.resume();
@@ -178,7 +180,7 @@ function voice(t, o) {
     if (noise) { const ng = AC.createGain(); ng.gain.value = o.noise; noise.connect(ng); ng.connect(f); }
     f.connect(g); g.connect(env);
   }
-  out.connect(master);
+  out.connect(bus);
   osc.start(t); osc.stop(t + dur + .05);
   if (noise) { noise.start(t); noise.stop(t + dur + .05); }
 }
@@ -186,7 +188,7 @@ function hiss(t, dur, gain) {
   const s = AC.createBufferSource(), f = AC.createBiquadFilter(), g = AC.createGain();
   s.buffer = noiseBuf; s.loop = true; f.type = 'highpass'; f.frequency.value = 3800;
   g.gain.setValueAtTime(.001, t); g.gain.linearRampToValueAtTime(gain, t + dur * .35); g.gain.exponentialRampToValueAtTime(.001, t + dur);
-  s.connect(f); f.connect(g); g.connect(master); s.start(t); s.stop(t + dur + .05);
+  s.connect(f); f.connect(g); g.connect(bus); s.start(t); s.stop(t + dur + .05);
 }
 
 // Vier varianten per dier: toonhoogte (PM), tempo (ST) en aantal herhalingen verschillen.
@@ -208,25 +210,29 @@ const SYNTH = {
     voice(t + n * .2 * ST[v], { f0: 520 * PM[v], f1: 420 * PM[v], dur: .35, gain: .5, form: [{ f: [800, 800], q: 6 }, { f: [1200, 1100], q: 6 }] }); },
 };
 const MAX_CLIP = 3.5;          // lange opnames worden na zoveel seconden uitgefaded
-let current = null;
-function stopCurrent() {
-  if (!current) return;
-  try { current.g.gain.cancelScheduledValues(AC.currentTime); current.g.gain.setTargetAtTime(0, AC.currentTime, .03); current.s.stop(AC.currentTime + .15); } catch (e) {}
-  current = null;
+function newBus() { bus = AC.createGain(); bus.connect(master); }
+// Alles wat nu klinkt (opnames én synthesizer) direct afkappen; wat nog moet gaan klinken vervalt.
+function stopAll() {
+  playToken++;
+  if (!AC || !bus) return;
+  const old = bus; old.gain.cancelScheduledValues(AC.currentTime); old.gain.setTargetAtTime(0, AC.currentTime, .02);
+  setTimeout(() => { try { old.disconnect(); } catch (e) {} }, 400);
+  newBus();
 }
 async function playAnimal(id) {
   if (!AC) return;
   AC.resume();
-  stopCurrent();
+  stopAll();
+  const tok = playToken;
   if (sampleReady[id]) await sampleReady[id];
+  if (tok !== playToken) return;
   const s = samples[id];
   if (s && s.length) {
     const src = AC.createBufferSource(), g = AC.createGain(), t = AC.currentTime, buf = pick(s);
     src.buffer = buf; g.gain.setValueAtTime(1, t);
     const len = Math.min(buf.duration, MAX_CLIP);
     if (buf.duration > MAX_CLIP) g.gain.setValueAtTime(1, t + len - .4), g.gain.linearRampToValueAtTime(0, t + len);
-    src.connect(g); g.connect(master); src.start(t); src.stop(t + len + .05);
-    current = { s: src, g };
+    src.connect(g); g.connect(bus); src.start(t); src.stop(t + len + .05);
   } else SYNTH[id](AC.currentTime + .01, Math.floor(Math.random() * 4));
 }
 function tone(f0, f1, dur, vol, type = 'sine', delay = 0) {
@@ -248,10 +254,10 @@ for (let i = 0; i < 4; i++) {
   const t = document.createElement('button'); t.className = 'tile'; t.addEventListener('click', () => playTile(i)); listenEl.appendChild(t); tiles.push(t);
   const a = document.createElement('button'); a.className = 'ans'; a.addEventListener('click', () => answer(i)); answerEl.appendChild(a); answers.push(a);
 }
-let round = null, prevIds = [], nextTimer = 0;
+let round = null, prevIds = [], nextTimer = 0, revealTimer = 0;
 
 function newRound() {
-  clearTimeout(nextTimer);
+  clearTimeout(nextTimer); clearTimeout(revealTimer); stopAll();
   let pool = ANIMALS.filter(a => !prevIds.includes(a.id));
   if (pool.length < 4) pool = ANIMALS;
   const animals = shuffle(pool).slice(0, 4);
@@ -279,7 +285,7 @@ function answer(i) {
   answers[i].classList.add('right');
   const b = document.createElement('div'); b.className = 'badge'; b.textContent = round.wrong.emoji; tiles[i].appendChild(b);
   sfx.win(); confettiBurst();
-  setTimeout(() => playAnimal(round.wrong.id), 700);
+  revealTimer = setTimeout(() => playAnimal(round.wrong.id), 700);
   nextTimer = setTimeout(newRound, 3200);
 }
 
@@ -327,17 +333,17 @@ if (/[?&]auto/.test(location.search)) {
   }
   clearTimeout(nextTimer); newRound();
   try {   // alle geluiden (14 dieren x 4 varianten) offline renderen om fouten te vangen
-    AC = new OfflineAudioContext(1, 44100 * 4, 44100); master = AC.createGain(); master.connect(AC.destination);
+    AC = new OfflineAudioContext(1, 44100 * 4, 44100); master = AC.createGain(); master.connect(AC.destination); newBus();
     noiseBuf = AC.createBuffer(1, 44100, 44100);
     for (const a of ANIMALS) for (let v = 0; v < 4; v++) SYNTH[a.id](.01, v);
     log.push('synth-ok');
   } catch (e) { log.push('SYNTH-FOUT ' + e.message); }
-  AC = new OfflineAudioContext(1, 44100, 44100); master = AC.createGain();
+  AC = new OfflineAudioContext(1, 44100, 44100); master = AC.createGain(); newBus();
   loadSamples().then(() => {
     const bad = ANIMALS.filter(a => !samples[a.id] || !samples[a.id].length).map(a => a.id);
     log.push('opnames:' + ANIMALS.map(a => a.id + '=' + (samples[a.id] ? samples[a.id].length : 0)).join(' ') + (bad.length ? ' ONTBREEKT:' + bad : ''));
-    AC = null; master = null; document.title = log.join(',');
-  });
+    AC = null; master = null; bus = null; document.title = log.join(',');
+  }).catch(e => { document.title = 'TESTFOUT ' + e.message; });
   document.title = log.join(',');
 }
 </script>
