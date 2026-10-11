@@ -456,7 +456,7 @@ function moveTrolleyTo(x, dt, speed) {
 
 function updateDemolish(dt) {
   if (G.intro) { G.ropeL = Math.min(BALL_L, G.ropeL + 420 * dt); if (G.ropeL >= BALL_L) G.intro = false; }
-  updateTrolley(dt, 800);
+  updateTrolley(dt, 720);
 
   const n = 2, h = dt / n;
   for (let i = 0; i < n; i++) {
@@ -555,7 +555,7 @@ function updateBuild(dt) {
       break;
     }
     case 'carry': {
-      updateTrolley(dt, 700);
+      updateTrolley(dt, 630);
       const center = P.tx + P.w / 2, dx = G.tx - center;
       const tol = B.p > 0 ? 46 : 30;
       if (Math.abs(dx) < tol) {
