@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Spelletjes</title>
+<style>
+  :root {
+    --bg: #fff6e0;
+    --ink: #3a2e5c;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0;
+    min-height: 100%;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: ui-rounded, "Nunito", system-ui, sans-serif;
+    overscroll-behavior: none;
+    touch-action: manipulation;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  main {
+    padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+    max-width: 640px;
+    margin: 0 auto;
+  }
+  h1 {
+    text-align: center;
+    font-size: 2rem;
+    margin: 8px 0 20px;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+  }
+  .tile {
+    aspect-ratio: 1;
+    border: 0;
+    border-radius: 28px;
+    background: var(--c);
+    color: inherit;
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: clamp(64px, 22vw, 120px);
+    line-height: 1;
+    box-shadow: 0 8px 0 rgb(0 0 0 / .15);
+    cursor: pointer;
+    transition: transform .1s, box-shadow .1s;
+  }
+  .tile:active {
+    transform: translateY(6px);
+    box-shadow: 0 2px 0 rgb(0 0 0 / .15);
+  }
+  .tile.soon { opacity: .55; }
+  .tile.wiggle { animation: wiggle .4s; }
+  @keyframes wiggle {
+    25% { transform: rotate(-6deg); }
+    75% { transform: rotate(6deg); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .tile.wiggle { animation: none; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>🎈 Spelletjes</h1>
+  <div class="grid" id="grid"></div>
+</main>
+
+<script>
+  // Een spel wordt echt door `href` toe te voegen. Zonder href is het een placeholder.
+  const games = [
+    { icon: '🐶', color: '#ffd1a8', title: 'Dieren' },
+    { icon: '🫧', color: '#b8e6ff', title: 'Zeepbellen' },
+    { icon: '🎨', color: '#ffc2e0', title: 'Kleuren' },
+    { icon: '🔢', color: '#d4f0b0', title: 'Tellen' },
+    { icon: '🧩', color: '#e3d0ff', title: 'Puzzel' },
+    { icon: '🎵', color: '#ffe48a', title: 'Muziek' },
+  ];
+
+  const grid = document.getElementById('grid');
+  for (const g of games) {
+    const tile = document.createElement(g.href ? 'a' : 'button');
+    tile.className = 'tile' + (g.href ? '' : ' soon');
+    tile.style.setProperty('--c', g.color);
+    tile.setAttribute('aria-label', g.title);
+    tile.textContent = g.icon;
+    if (g.href) {
+      tile.href = g.href;
+    } else {
+      tile.addEventListener('click', () => {
+        tile.classList.remove('wiggle');
+        void tile.offsetWidth;
+        tile.classList.add('wiggle');
+      });
+    }
+    grid.appendChild(tile);
+  }
+</script>
+</body>
+</html>
