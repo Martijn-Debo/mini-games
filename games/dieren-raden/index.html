@@ -126,13 +126,22 @@ function initAudio() {
   } catch (e) { AC = null; }
 }
 const sampleReady = {};        // dier -> belofte die klaar is als de opnames gedecodeerd zijn
+const decode = buf => new Promise((res, rej) => { const p = AC.decodeAudioData(buf, res, rej); if (p && p.catch) p.catch(rej); });   // werkt ook op oudere Safari
+function warn(msg) {
+  let w = document.getElementById('warn');
+  if (!w) { w = document.createElement('div'); w.id = 'warn'; w.style.cssText = 'position:fixed;left:6px;bottom:2px;font:11px system-ui;color:#c00;z-index:20;pointer-events:none'; document.body.appendChild(w); }
+  w.textContent = '⚠ ' + msg;
+}
 async function loadSamples() {
   try {
-    const m = await (await fetch('geluiden/manifest.json')).json();
+    const r = await fetch('geluiden/manifest.json'); if (!r.ok) throw new Error('manifest ' + r.status);
+    const m = await r.json(), fails = [];
     await Promise.all(Object.entries(m).map(([id, files]) => sampleReady[id] = Promise.all(files.map(async f => {
-      try { return await AC.decodeAudioData(await (await fetch('geluiden/' + f)).arrayBuffer()); } catch (e) { return null; }
+      try { const rr = await fetch('geluiden/' + f); if (!rr.ok) throw new Error(rr.status); return await decode(await rr.arrayBuffer()); }
+      catch (e) { fails.push(f + ': ' + (e && e.message || e)); return null; }
     })).then(bufs => { samples[id] = bufs.filter(Boolean); })));
-  } catch (e) { /* geen manifest: synthesizer */ }
+    if (fails.length) warn('opnames niet geladen (' + fails.length + '): ' + fails[0]);
+  } catch (e) { warn('geen opnames: ' + (e && e.message || e)); }
 }
 
 // Eén "stem": zaagtand/blok/sinus door twee formant-filters, met glijdende toonhoogte.
