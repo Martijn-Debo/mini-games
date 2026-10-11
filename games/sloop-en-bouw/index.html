@@ -198,8 +198,27 @@ function initAudio() {
     const d = noiseBuf.getChannelData(0);
     for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
     AC.resume();
+    // motor: laag gebrom, toonhoogte volgt de snelheid
+    motor = { o: AC.createOscillator(), f: AC.createBiquadFilter(), g: AC.createGain() };
+    motor.o.type = 'sawtooth'; motor.o.frequency.value = 55; motor.f.type = 'lowpass'; motor.f.frequency.value = 260; motor.g.gain.value = 0;
+    motor.o.connect(motor.f); motor.f.connect(motor.g); motor.g.connect(AC.destination); motor.o.start();
+    // zoevende kogel: ruis door een bandfilter
+    whoosh = { s: AC.createBufferSource(), f: AC.createBiquadFilter(), g: AC.createGain() };
+    whoosh.s.buffer = noiseBuf; whoosh.s.loop = true; whoosh.f.type = 'bandpass'; whoosh.f.Q.value = .8; whoosh.f.frequency.value = 400; whoosh.g.gain.value = 0;
+    whoosh.s.connect(whoosh.f); whoosh.f.connect(whoosh.g); whoosh.g.connect(AC.destination); whoosh.s.start();
+    // iOS: een (stil) audio-element laat WebAudio ook klinken als de stilteknop aan staat
+    const a = new Audio('data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAAA');
+    a.loop = true; a.play().catch(() => {});
   } catch (e) { AC = null; }
 }
+let motor = null, whoosh = null;
+function audioUpdate(m, w) {
+  if (!AC || !motor) return;
+  const t = AC.currentTime;
+  motor.g.gain.setTargetAtTime(m * .07, t, .08); motor.o.frequency.setTargetAtTime(50 + m * 45, t, .1);
+  whoosh.g.gain.setTargetAtTime(w * w * .22, t, .06); whoosh.f.frequency.setTargetAtTime(350 + w * 900, t, .06);
+}
+document.addEventListener('visibilitychange', () => { if (AC) { if (document.hidden) AC.suspend(); else AC.resume(); } });
 function noise(dur, freq, vol) {
   if (!AC) return;
   const t = AC.currentTime, s = AC.createBufferSource(), f = AC.createBiquadFilter(), g = AC.createGain();
@@ -218,7 +237,8 @@ function tone(f0, f1, dur, vol, type = 'sine', delay = 0) {
 let lastCrash = 0;
 const sfx = {
   crash() { const n = performance.now(); if (n - lastCrash < 70) return; lastCrash = n; noise(.28, rnd(900, 2200), .3); tone(160, 60, .15, .25); },
-  place() { tone(180, 60, .2, .4); noise(.15, 700, .3); },
+  place() { tone(180, 60, .2, .4); noise(.15, 700, .3); [880, 1175, 1568].forEach((f, i) => tone(f, f, .4, .16, 'triangle', .12 + i * .09)); },
+  rumble() { noise(.8, 450, .4); tone(90, 40, .5, .3); },
   boom() { noise(.6, 1400, .5); tone(120, 35, .35, .45); },
   clank() { tone(420, 300, .08, .08, 'square'); },
   pop() { tone(500, 1000, .15, .2); },
@@ -469,7 +489,7 @@ function updateDemolish(dt) {
   }
 
   LV.stabT += dt;
-  if (LV.stabT >= .1) { LV.stabT = 0; const f = stabilityPass(LV, false); if (f) { sfx.crash(); G.shake = Math.max(G.shake, .15); } }
+  if (LV.stabT >= .1) { LV.stabT = 0; const f = stabilityPass(LV, false); if (f) { sfx.rumble(); G.shake = Math.max(G.shake, .2); } }
 
   if (!LV.crumble && LV.destroyed / LV.total >= CLEAR_FRAC) LV.crumble = true;
   if (LV.crumble) {
@@ -568,6 +588,9 @@ function update(dt) {
   else if (G.phase === 'build') updateBuild(dt);
   else if (G.phase === 'celebrate') updateCelebrate(dt);
 
+  const ropeSpeed = Math.abs(G.ropeL - (G.prevRope ?? G.ropeL)) / Math.max(dt, 1e-3); G.prevRope = G.ropeL;
+  const moving = Math.max(Math.abs(G.vx) / 800, Math.min(1, ropeSpeed / 320) * .7);
+  audioUpdate(moving, G.phase === 'demolish' ? clamp(Math.hypot(G.bvx, G.bvy) / 700, 0, 1) : 0);
   G.sway += (clamp(-G.vx / 800 * .12, -.1, .1) - G.sway) * Math.min(1, dt * 5);
   G.shake = Math.max(0, G.shake - dt);
 
@@ -758,7 +781,7 @@ function frame(now) {
   if (G.phase !== 'title' && !portrait.matches) {
     const steps = Math.max(1, Math.ceil(dt / (1 / 30)));
     for (let i = 0; i < steps; i++) update(dt / steps);
-  } else G.time += dt;
+  } else { G.time += dt; audioUpdate(0, 0); }
   draw();
   if (AUTO && !SIM) document.title = G.phase + ' ' + (B ? B.s + ' ' + B.cur + '/' + B.pieces.length : LV ? LV.destroyed + '/' + LV.total : '') + ' ' + (curDef ? curDef.name : '');
   requestAnimationFrame(frame);
