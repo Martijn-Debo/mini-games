@@ -25,4 +25,6 @@ Verzameling kleine spelletjes voor peuters/kleuters. Elk spel staat op zichzelf.
 - Test op mobiel formaat (bv. 390x844) voordat je zegt dat iets klaar is.
 
 ## Instructies van de gebruiker
-<!-- Voeg hier voorkeuren en beslissingen toe zodra ze duidelijk worden. -->
+- Mobiele spellen draaien in landscape en worden bij voorkeur bestuurd door de telefoon te kantelen (DeviceOrientation, met pointer/toetsen als terugval voor desktop).
+- Een spel heeft een ouder-knop (🏠, 1 seconde ingedrukt houden) om terug naar het overzicht te gaan.
+- Eerste spel: `games/sloop-en-bouw` (kraan met sloopkogel, daarna het object weer opbouwen). Nieuwe objecten toevoegen = een pixel-plaatje + onderdelen in `OBJECTS`.
