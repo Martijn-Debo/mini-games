@@ -414,7 +414,9 @@ function beginDemolish() {
   LV = makeLevel(curDef, true); B = null;
   dust(LV.x0 + LV.w * CELL / 2, GROUND - 20, 14, LV.w * CELL / 2);
   G.phase = 'demolish'; G.mode = 'ball'; G.craneColor = '#e8503a';
-  G.intro = true; G.ropeL = Math.min(G.ropeL, HOME_L + 20); G.theta = G.omega = 0; G.sway = 0;
+  G.intro = true; G.ropeL = Math.min(G.ropeL, HOME_L + 20);
+  G.tx = 450; G.vx = G.ax = 0;                      // kogel begint links, ver van het gebouw
+  G.theta = G.omega = 0; G.sway = 0;
   sfx.pop();
 }
 
