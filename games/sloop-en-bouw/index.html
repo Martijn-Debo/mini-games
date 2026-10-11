@@ -149,6 +149,7 @@ const HOME_L = 100, BALL_L = 510, BALL_R = 34;
 const PILE_X = 470, ATT = 26;                       // ATT = afstand haak -> bovenkant onderdeel
 const TX_MIN = 250, TX_MAX = 1500;
 const PG = 2600;                                    // zwaartekracht voor de slinger
+const BLOW_MIN = 180;                               // minimale kogelsnelheid (px/s) voor een klap
 const CLEAR_FRAC = 0.85;                            // zoveel gesloopt = de rest stort vanzelf in
 
 const AUTO = /[?&]auto/.test(location.search);       // testmodus: bot speelt zelf
@@ -218,6 +219,7 @@ let lastCrash = 0;
 const sfx = {
   crash() { const n = performance.now(); if (n - lastCrash < 70) return; lastCrash = n; noise(.28, rnd(900, 2200), .3); tone(160, 60, .15, .25); },
   place() { tone(180, 60, .2, .4); noise(.15, 700, .3); },
+  boom() { noise(.6, 1400, .5); tone(120, 35, .35, .45); },
   clank() { tone(420, 300, .08, .08, 'square'); },
   pop() { tone(500, 1000, .15, .2); },
   win() { [523, 659, 784, 1047, 1319].forEach((f, i) => tone(f, f, .35, .2, 'triangle', i * .13)); },
@@ -349,6 +351,22 @@ function breakCell(lv, r, c, vx, vy) {
   if (Math.random() < .5) dust(lv.x0 + (c + .5) * CELL, lv.y0 + (r + .5) * CELL, 1, 8);
 }
 
+// Klap op punt (ix,iy): stenen dichtbij breken, stenen eromheen scheuren (en breken bij een volgende klap sneller).
+function blow(ix, iy, power) {
+  G.blows = (G.blows || 0) + 1;
+  const R = 40 + 55 * power;
+  for (let r = 0; r < LV.h; r++) for (let c = 0; c < LV.w; c++) {
+    const k = LV.cells[r][c]; if (!k) continue;
+    const cx = LV.x0 + (c + .5) * CELL, cy = LV.y0 + (r + .5) * CELL, d = Math.hypot(cx - ix, cy - iy);
+    const lim = k.crack >= 0 ? R * 1.35 : R;
+    if (d < lim) {
+      const a = Math.atan2(cy - iy, cx - ix), v = (250 + 450 * power) * (1 - d / lim * .6);
+      breakCell(LV, r, c, Math.cos(a) * v * .7 + G.bvx * .25, Math.sin(a) * v * .7 - rnd(80, 300));
+    } else if (d < R * 1.7 && k.crack < 0) k.crack = rnd(.15, .85);
+  }
+  dust(ix, iy, 8, 40); sfx.boom();
+}
+
 // ---------- fasen ----------
 function startGame() {
   document.getElementById('title').classList.add('hidden');
@@ -422,20 +440,32 @@ function updateDemolish(dt) {
   G.bx = bx; G.by = by;
   const speed = Math.hypot(G.bvx, G.bvy);
 
-  if (!G.intro && speed > 40 && !LV.crumble) {
+  G.cool = Math.max(0, (G.cool || 0) - dt);
+  if (!G.intro && !LV.crumble) {
     const c0 = Math.max(0, Math.floor((bx - BALL_R - LV.x0) / CELL)), c1 = Math.min(LV.w - 1, Math.floor((bx + BALL_R - LV.x0) / CELL));
     const r0 = Math.max(0, Math.floor((by - BALL_R - LV.y0) / CELL)), r1 = Math.min(LV.h - 1, Math.floor((by + BALL_R - LV.y0) / CELL));
-    let hit = false;
+    let pen = 0, px = 0, py = 0, sx = 0, sy = 0, n = 0;
     for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) {
       if (!LV.cells[r][c]) continue;
       const rx = LV.x0 + c * CELL, ry = LV.y0 + r * CELL;
       const nx = clamp(bx, rx, rx + CELL), ny = clamp(by, ry, ry + CELL);
-      if ((bx - nx) ** 2 + (by - ny) ** 2 < BALL_R * BALL_R) {
-        breakCell(LV, r, c, G.bvx * .5 + rnd(-80, 80), G.bvy * .5 - rnd(60, 260)); hit = true;
-        G.omega *= .998;
+      const d = Math.hypot(bx - nx, by - ny);
+      if (d < BALL_R) {
+        n++; sx += nx; sy += ny;
+        if (d > .01 && BALL_R - d > pen) { pen = BALL_R - d; px = (bx - nx) / d * pen; py = (by - ny) / d * pen; }
       }
     }
-    if (hit) { sfx.crash(); G.shake = Math.max(G.shake, .12); }
+    if (n) {
+      if (G.cool <= 0 && speed >= BLOW_MIN) {       // een grote klap
+        const power = clamp(speed / 650, .45, 1);
+        blow(sx / n, sy / n, power);
+        G.omega *= -.45; G.cool = .5; G.shake = Math.max(G.shake, .3);
+      } else G.omega *= .6;                          // te zacht of net geweest: de kogel stuitert alleen
+      if (pen) {                                     // niet door het gebouw heen
+        G.theta += (px * Math.cos(G.theta) - py * Math.sin(G.theta)) / G.ropeL;
+        G.bx = G.tx + G.ropeL * Math.sin(G.theta); G.by = TY + G.ropeL * Math.cos(G.theta);
+      }
+    }
   }
 
   LV.stabT += dt;
@@ -742,7 +772,7 @@ if (SIM) {   // test: simuleer SIM seconden zonder te tekenen en log de fasewiss
   for (let i = 0; i < SIM * 30; i++) {
     update(1 / 30);
     const k = G.phase + (B ? ':' + B.s : '');
-    if (G.phase !== lp) { log.push((i / 30).toFixed(0) + 's ' + G.phase + ' ' + curDef.name); lp = G.phase; }
+    if (G.phase !== lp) { log.push((i / 30).toFixed(0) + 's ' + G.phase + ' ' + curDef.name + ' blows=' + G.blows); lp = G.phase; }
   }
   document.title = log.join(' | ');
 }
