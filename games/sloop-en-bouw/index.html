@@ -307,7 +307,6 @@ let queue = [], lastDef = null, curDef = null;
 function nextDef() {
   if (!queue.length) {
     queue = OBJECTS.filter(o => o !== lastDef).sort(() => Math.random() - .5);
-    if (lastDef === null) queue.unshift(...queue.splice(queue.indexOf(OBJECTS[0]), 1));   // eerste keer: het huis
   }
   lastDef = queue.shift(); return lastDef;
 }
@@ -796,7 +795,7 @@ function frame(now) {
   if (AUTO && !SIM) document.title = G.phase + ' ' + (B ? B.s + ' ' + B.cur + '/' + B.pieces.length : LV ? LV.destroyed + '/' + LV.total : '') + ' ' + (curDef ? curDef.name : '');
   requestAnimationFrame(frame);
 }
-curDef = OBJECTS[0]; LV = makeLevel(curDef, true);
+curDef = pick(OBJECTS); LV = makeLevel(curDef, true);
 document.getElementById('start').addEventListener('click', startGame);
 if (AUTO) startGame();
 const SIM = +((location.search.match(/[?&]sim=(\d+)/) || [])[1] || 0);
