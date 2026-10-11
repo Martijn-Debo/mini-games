@@ -388,7 +388,15 @@ function blow(ix, iy, power) {
 }
 
 // ---------- fasen ----------
+// Scherm aan houden (kantelen raakt het scherm niet aan, dus anders gaat het op standby)
+let wakeLock = null;
+async function keepAwake() {
+  try { if ('wakeLock' in navigator && !wakeLock) { wakeLock = await navigator.wakeLock.request('screen'); wakeLock.addEventListener('release', () => wakeLock = null); } } catch (e) {}
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden && G.phase !== 'title') keepAwake(); });
+
 function startGame() {
+  keepAwake();
   document.getElementById('title').classList.add('hidden');
   initAudio();
   try {
