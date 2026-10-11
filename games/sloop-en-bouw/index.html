@@ -555,7 +555,7 @@ function updateBuild(dt) {
       break;
     }
     case 'carry': {
-      updateTrolley(dt, 630);
+      updateTrolley(dt, 420);
       const center = P.tx + P.w / 2, dx = G.tx - center;
       const tol = B.p > 0 ? 46 : 30;
       if (Math.abs(dx) < tol) {
