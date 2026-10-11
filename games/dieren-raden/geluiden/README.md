@@ -1,4 +1,6 @@
-# Eigen geluiden (optioneel)
+# Eigen geluiden
+
+De opnames staan in `manifest.json` (Nederlandse diernaam -> bestanden). Een nieuw bestand toevoegen = bestand hier neerzetten en in de lijst van het dier zetten. Dieren zonder bestanden vallen terug op de synthesizer. Opnames langer dan 3,5 seconde worden uitgefaded.
 
 Zonder bestanden maakt het spel de dierengeluiden zelf (synthesizer). Wil je echte opnames:
 

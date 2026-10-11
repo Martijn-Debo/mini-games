@@ -1,0 +1,75 @@
+{
+  "paard": [
+    "horse1.mp3",
+    "horse2.mp3",
+    "horse3.mp3",
+    "horse4.mp3"
+  ],
+  "kikker": [
+    "frog1.mp3",
+    "frog2.mp3",
+    "frog3.mp3",
+    "frog4.mp3"
+  ],
+  "poes": [
+    "cat1.mp3",
+    "cat2.mp3",
+    "cat3.mp3",
+    "cat4.mp3"
+  ],
+  "hond": [
+    "dog1.mp3",
+    "dog2.mp3",
+    "dog3.mp3",
+    "dog4.mp3"
+  ],
+  "vogeltje": [
+    "bird1.mp3",
+    "bird2.mp3",
+    "bird3.mp3",
+    "bird4.mp3"
+  ],
+  "koe": [
+    "cow1.mp3",
+    "cow2.mp3",
+    "cow3.mp3",
+    "cow4.mp3"
+  ],
+  "varken": [
+    "pig1.mp3",
+    "pig2.mp3",
+    "pig3.mp3",
+    "pig4.mp3"
+  ],
+  "geit": [
+    "goat1.mp3",
+    "goat2.mp3"
+  ],
+  "olifant": [
+    "elephant1.mp3",
+    "elephant2.mp3",
+    "elephant3.mp3",
+    "elephant4.mp3"
+  ],
+  "kip": [
+    "chicken1.mp3",
+    "chicken2.mp3",
+    "chicken3.mp3",
+    "chicken4.mp3"
+  ],
+  "slang": [
+    "snake1.mp3",
+    "snake2.mp3",
+    "snake3.mp3"
+  ],
+  "leeuw": [
+    "lion1.mp3",
+    "lion2.mp3",
+    "lion3.mp3"
+  ],
+  "aap": [
+    "monkey1.mp3",
+    "monkey2.mp3",
+    "monkey3.mp3"
+  ]
+}

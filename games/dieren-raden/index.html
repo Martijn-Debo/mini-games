@@ -95,7 +95,6 @@ const ANIMALS = [
   { id: 'vogeltje', emoji: '🐦', color: '#b8e6ff' },
   { id: 'koe', emoji: '🐮', color: '#e7e1ff' },
   { id: 'varken', emoji: '🐷', color: '#ffc7da' },
-  { id: 'muis', emoji: '🐭', color: '#f5d6f5' },
   { id: 'geit', emoji: '🐐', color: '#f4eccf' },
   { id: 'olifant', emoji: '🐘', color: '#cfe8d6' },
   { id: 'kip', emoji: '🐔', color: '#ffe48a' },
@@ -126,15 +125,13 @@ function initAudio() {
     loadSamples();
   } catch (e) { AC = null; }
 }
+const sampleReady = {};        // dier -> belofte die klaar is als de opnames gedecodeerd zijn
 async function loadSamples() {
   try {
     const m = await (await fetch('geluiden/manifest.json')).json();
-    for (const [id, files] of Object.entries(m)) {
-      const bufs = await Promise.all(files.map(async f => {
-        try { return await AC.decodeAudioData(await (await fetch('geluiden/' + f)).arrayBuffer()); } catch (e) { return null; }
-      }));
-      samples[id] = bufs.filter(Boolean);
-    }
+    await Promise.all(Object.entries(m).map(([id, files]) => sampleReady[id] = Promise.all(files.map(async f => {
+      try { return await AC.decodeAudioData(await (await fetch('geluiden/' + f)).arrayBuffer()); } catch (e) { return null; }
+    })).then(bufs => { samples[id] = bufs.filter(Boolean); })));
   } catch (e) { /* geen manifest: synthesizer */ }
 }
 
@@ -193,7 +190,6 @@ const SYNTH = {
   kikker(t, v) { const n = [2, 3, 2, 3][v]; for (let i = 0; i < n; i++) voice(t + i * .3 * ST[v], { type: 'square', f0: 150 * PM[v], f1: 105 * PM[v], dur: .2, gain: .35, am: 45, form: [{ f: [500, 800], q: 5 }, { f: [1500, 1800], q: 6 }] }); },
   vogeltje(t, v) { const n = [3, 4, 5, 3][v]; for (let i = 0; i < n; i++) voice(t + i * .13 * ST[v], { type: 'sine', f0: (i % 2 ? 2600 : 3100) * PM[v], f1: (i % 2 ? 3600 : 4400) * PM[v], dur: .09, gain: .2 }); },
   varken(t, v) { const n = [2, 3, 2, 1][v]; for (let i = 0; i < n; i++) voice(t + i * .36 * ST[v], { f0: 150 * PM[v], f1: 90 * PM[v], dur: .28, gain: .55, am: 30, noise: .35, form: [{ f: [500, 350], q: 4 }, { f: [1100, 800], q: 5 }] }); },
-  muis(t, v) { const n = [3, 4, 2, 3][v]; for (let i = 0; i < n; i++) voice(t + i * .12 * ST[v], { type: 'sine', f0: 3300 * PM[v], f1: 3900 * PM[v], dur: .08, gain: .16, vib: 40, vibD: 120 }); },
   geit(t, v) { voice(t, { f0: 330 * PM[v], f1: 295 * PM[v], dur: .95 * ST[v], att: .05, gain: .55, am: 26, form: [{ f: [800, 1100], q: 5 }, { f: [1500, 1700], q: 6 }] }); },
   olifant(t, v) { voice(t, { f0: 260 * PM[v], fm: 520 * PM[v], f1: 340 * PM[v], dur: 1.2 * ST[v], att: .1, gain: .55, vib: 10, vibD: 12, noise: .25, form: [{ f: [600, 1100], q: 4 }, { f: [1400, 2000], q: 5 }] }); },
   kip(t, v) { const n = [4, 5, 3, 4][v]; for (let i = 0; i < n; i++) voice(t + i * .12 * ST[v] + (i % 2) * .03, { f0: 540 * PM[v], f1: 380 * PM[v], dur: .07, gain: .45, noise: .1, form: [{ f: [900, 800], q: 5 }, { f: [1800, 1500], q: 6 }] }); },
@@ -202,12 +198,26 @@ const SYNTH = {
   aap(t, v) { const n = [3, 4, 3, 4][v]; for (let i = 0; i < n; i++) voice(t + i * .2 * ST[v], { f0: 430 * PM[v], f1: 380 * PM[v], dur: .14, gain: .5, form: [{ f: [350, 350], q: 6 }, { f: [800, 800], q: 6 }] });
     voice(t + n * .2 * ST[v], { f0: 520 * PM[v], f1: 420 * PM[v], dur: .35, gain: .5, form: [{ f: [800, 800], q: 6 }, { f: [1200, 1100], q: 6 }] }); },
 };
-function playAnimal(id) {
+const MAX_CLIP = 3.5;          // lange opnames worden na zoveel seconden uitgefaded
+let current = null;
+function stopCurrent() {
+  if (!current) return;
+  try { current.g.gain.cancelScheduledValues(AC.currentTime); current.g.gain.setTargetAtTime(0, AC.currentTime, .03); current.s.stop(AC.currentTime + .15); } catch (e) {}
+  current = null;
+}
+async function playAnimal(id) {
   if (!AC) return;
   AC.resume();
+  stopCurrent();
+  if (sampleReady[id]) await sampleReady[id];
   const s = samples[id];
   if (s && s.length) {
-    const src = AC.createBufferSource(); src.buffer = pick(s); src.connect(master); src.start();
+    const src = AC.createBufferSource(), g = AC.createGain(), t = AC.currentTime, buf = pick(s);
+    src.buffer = buf; g.gain.setValueAtTime(1, t);
+    const len = Math.min(buf.duration, MAX_CLIP);
+    if (buf.duration > MAX_CLIP) g.gain.setValueAtTime(1, t + len - .4), g.gain.linearRampToValueAtTime(0, t + len);
+    src.connect(g); g.connect(master); src.start(t); src.stop(t + len + .05);
+    current = { s: src, g };
   } else SYNTH[id](AC.currentTime + .01, Math.floor(Math.random() * 4));
 }
 function tone(f0, f1, dur, vol, type = 'sine', delay = 0) {
@@ -313,7 +323,12 @@ if (/[?&]auto/.test(location.search)) {
     for (const a of ANIMALS) for (let v = 0; v < 4; v++) SYNTH[a.id](.01, v);
     log.push('synth-ok');
   } catch (e) { log.push('SYNTH-FOUT ' + e.message); }
-  AC = null; master = null;
+  AC = new OfflineAudioContext(1, 44100, 44100); master = AC.createGain();
+  loadSamples().then(() => {
+    const bad = ANIMALS.filter(a => !samples[a.id] || !samples[a.id].length).map(a => a.id);
+    log.push('opnames:' + ANIMALS.map(a => a.id + '=' + (samples[a.id] ? samples[a.id].length : 0)).join(' ') + (bad.length ? ' ONTBREEKT:' + bad : ''));
+    AC = null; master = null; document.title = log.join(',');
+  });
   document.title = log.join(',');
 }
 </script>
