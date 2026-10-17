@@ -148,7 +148,8 @@ const TOWER_X = 110, JIB_Y = 56, TY = 102;          // TY = waar de kabel onder 
 const HOME_L = 100, BALL_L = 510, BALL_R = 34;
 const PILE_X = 470, ATT = 26;                       // ATT = afstand haak -> bovenkant onderdeel
 const TX_MIN = 250, TX_MAX = 1500;
-const PG = 2600;                                    // zwaartekracht voor de slinger
+const PG = 1700;                                    // zwaartekracht voor de slinger (lager = trager zwaaien)
+const SWING_DAMP = .7, SWING_MAX = 1.0;             // demping en grootste uitslag (radialen) van de kogel
 const BLOW_MIN = 180;                               // minimale kogelsnelheid (px/s) voor een klap
 const CLEAR_FRAC = 0.85;                            // zoveel gesloopt = de rest stort vanzelf in
 
@@ -441,9 +442,9 @@ function beginCelebrate() {
 }
 
 // ---------- update ----------
-function updateTrolley(dt, vmax) {
+function updateTrolley(dt, vmax, resp = 6) {
   const prev = G.vx;
-  G.vx += (input() * vmax - G.vx) * Math.min(1, dt * 6);
+  G.vx += (input() * vmax - G.vx) * Math.min(1, dt * resp);
   G.tx += G.vx * dt;
   if (G.tx < TX_MIN) { G.tx = TX_MIN; if (G.vx < 0) G.vx = 0; }
   if (G.tx > TX_MAX) { G.tx = TX_MAX; if (G.vx > 0) G.vx = 0; }
@@ -456,13 +457,13 @@ function moveTrolleyTo(x, dt, speed) {
 
 function updateDemolish(dt) {
   if (G.intro) { G.ropeL = Math.min(BALL_L, G.ropeL + 420 * dt); if (G.ropeL >= BALL_L) G.intro = false; }
-  updateTrolley(dt, 720);
+  updateTrolley(dt, 560, 3);                       // rustig optrekken: de kogel slingert niet zo heftig
 
   const n = 2, h = dt / n;
   for (let i = 0; i < n; i++) {
-    const acc = -(PG / BALL_L) * Math.sin(G.theta) - (G.ax / BALL_L) * Math.cos(G.theta) - .35 * G.omega;
+    const acc = -(PG / BALL_L) * Math.sin(G.theta) - (G.ax / BALL_L) * Math.cos(G.theta) - SWING_DAMP * G.omega;
     G.omega += acc * h; G.theta += G.omega * h;
-    if (Math.abs(G.theta) > 1.45) { G.theta = Math.sign(G.theta) * 1.45; G.omega = 0; }
+    if (Math.abs(G.theta) > SWING_MAX) { G.theta = Math.sign(G.theta) * SWING_MAX; G.omega = 0; }
   }
   const bx = G.tx + G.ropeL * Math.sin(G.theta), by = TY + G.ropeL * Math.cos(G.theta);
   G.bvx = (bx - G.bx) / Math.max(dt, 1e-3); G.bvy = (by - G.by) / Math.max(dt, 1e-3);

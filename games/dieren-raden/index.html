@@ -69,7 +69,13 @@
     .ans { aspect-ratio: auto; height: 24dvh; font-size: min(7vw, 14dvh); }
     .divider p { font-size: clamp(14px, 5dvh, 24px); }
   }
-  @media (prefers-reduced-motion: reduce) { .tile.play, .ans.grey, .badge, #start { animation: none; } }
+  /* Telefoon liggend: vraag om hem rechtop te houden (iOS kan de stand niet vastzetten). Desktop blijft liggend werken. */
+  #rotate { display: none; z-index: 20; background: #fff6e0; }
+  #rotate .tilt { display: inline-block; animation: turn 2s ease-in-out infinite; font-size: 30vh; }
+  #rotate p { font-size: 6vh; margin: 0; font-weight: 800; }
+  @keyframes turn { 0%, 30% { transform: rotate(-90deg); } 70%, 100% { transform: rotate(0); } }
+  @media (orientation: landscape) and (pointer: coarse) and (max-height: 500px) { #rotate { display: flex; } }
+  @media (prefers-reduced-motion: reduce) { .tile.play, .ans.grey, .badge, #start, #rotate .tilt { animation: none; } }
 </style>
 </head>
 <body>
@@ -84,6 +90,10 @@
   <div class="icons">🐮🐱🐶</div>
   <button id="start" aria-label="Start">▶</button>
   <div class="icons">🔊</div>
+</div>
+<div class="overlay" id="rotate">
+  <div class="tilt">📱</div>
+  <p>Draai je telefoon</p>
 </div>
 
 <script>
@@ -245,7 +255,16 @@ function fxLoop(now) {
 }
 
 // ---------- start / ouder-knop ----------
-function start() { document.getElementById('title').classList.add('hidden'); initAudio(); newRound(); }
+function start() {
+  document.getElementById('title').classList.add('hidden'); initAudio(); newRound();
+  // Staand vastzetten (lukt op Android via volledig scherm; iOS negeert het en toont dan het draai-scherm)
+  try {
+    if (matchMedia('(pointer: coarse)').matches) {
+      const p = document.documentElement.requestFullscreen && document.documentElement.requestFullscreen();
+      if (p && p.then) p.then(() => screen.orientation && screen.orientation.lock && screen.orientation.lock('portrait')).catch(() => {});
+    }
+  } catch (e) {}
+}
 // pointerup i.p.v. click: een tik die een beetje schuift telt ook (en geluid mag starten)
 document.getElementById('start').addEventListener('pointerup', start);
 const home = document.getElementById('home'); let homeTimer = 0;
