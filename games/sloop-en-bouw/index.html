@@ -25,7 +25,7 @@
   #start {
     width: min(34vmin, 190px); height: min(34vmin, 190px); border-radius: 50%; border: 0;
     background: #4cc35a; color: #fff; font-size: min(18vmin, 100px); padding-left: 1vmin;
-    box-shadow: 0 1.4vmin 0 #2f8f3b; cursor: pointer; animation: pulse 1.2s infinite;
+    box-shadow: 0 1.4vmin 0 #2f8f3b; cursor: pointer; animation: pulse 1.2s infinite; touch-action: none;
   }
   #start:active { transform: translateY(1vmin); box-shadow: 0 .3vmin 0 #2f8f3b; }
   .tilt { font-size: min(12vmin, 80px); display: inline-block; animation: tilt 1.8s ease-in-out infinite; }
@@ -796,7 +796,8 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 curDef = pick(OBJECTS); LV = makeLevel(curDef, true);
-document.getElementById('start').addEventListener('click', startGame);
+// pointerup i.p.v. click: een tik die een beetje schuift telt ook (en geluid mag starten)
+document.getElementById('start').addEventListener('pointerup', startGame);
 if (AUTO) startGame();
 const SIM = +((location.search.match(/[?&]sim=(\d+)/) || [])[1] || 0);
 if (SIM) {   // test: simuleer SIM seconden zonder te tekenen en log de fasewissels

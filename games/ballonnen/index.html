@@ -24,7 +24,7 @@
   #start {
     width: min(34vmin, 190px); height: min(34vmin, 190px); border-radius: 50%; border: 0;
     background: #4cc35a; color: #fff; font-size: min(18vmin, 100px); padding-left: 1vmin;
-    box-shadow: 0 1.4vmin 0 #2f8f3b; cursor: pointer; animation: pulse 1.2s infinite;
+    box-shadow: 0 1.4vmin 0 #2f8f3b; cursor: pointer; animation: pulse 1.2s infinite; touch-action: none;
   }
   #start:active { transform: translateY(1vmin); box-shadow: 0 .3vmin 0 #2f8f3b; }
   @keyframes pulse { 50% { transform: scale(1.06); } }
@@ -377,7 +377,8 @@ function startGame() {
   G.phase = 'play'; G.balloons = []; G.spawnT = 0;
   newTarget();
 }
-document.getElementById('start').addEventListener('click', startGame);
+// pointerup i.p.v. click: een tik die een beetje schuift telt ook (en geluid mag starten)
+document.getElementById('start').addEventListener('pointerup', startGame);
 const home = document.getElementById('home'); let homeTimer = 0;
 home.addEventListener('pointerdown', () => { home.classList.add('hold'); homeTimer = setTimeout(() => location.href = '../../index.html', 900); });
 ['pointerup', 'pointerleave', 'pointercancel'].forEach(ev => home.addEventListener(ev, () => { home.classList.remove('hold'); clearTimeout(homeTimer); }));

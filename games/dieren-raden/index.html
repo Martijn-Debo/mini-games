@@ -25,7 +25,7 @@
   .divider { text-align: center; }
   .divider hr { border: 0; height: 4px; border-radius: 2px; background: rgb(58 46 92 / .25); margin: 2px 0 8px; }
   .divider p { margin: 0; font-size: clamp(16px, 5vw, 26px); font-weight: 800; line-height: 1.2; }
-  button { font: inherit; color: inherit; border: 0; padding: 0; cursor: pointer; }
+  button { font: inherit; color: inherit; border: 0; padding: 0; cursor: pointer; touch-action: none; }
   .tile, .ans {
     position: relative; background: var(--c); display: flex; align-items: center; justify-content: center;
     box-shadow: 0 .8vmin 0 rgb(0 0 0 / .15); transition: transform .1s, box-shadow .1s, filter .3s;
@@ -186,8 +186,8 @@ const sfx = {
 const listenEl = document.getElementById('listen'), answerEl = document.getElementById('answer');
 const tiles = [], answers = [];
 for (let i = 0; i < 4; i++) {
-  const t = document.createElement('button'); t.className = 'tile'; t.addEventListener('click', () => playTile(i)); listenEl.appendChild(t); tiles.push(t);
-  const a = document.createElement('button'); a.className = 'ans'; a.addEventListener('click', () => answer(i)); answerEl.appendChild(a); answers.push(a);
+  const t = document.createElement('button'); t.className = 'tile'; t.addEventListener('pointerdown', () => playTile(i)); listenEl.appendChild(t); tiles.push(t);
+  const a = document.createElement('button'); a.className = 'ans'; a.addEventListener('pointerdown', () => answer(i)); answerEl.appendChild(a); answers.push(a);
 }
 let round = null, prevIds = [], nextTimer = 0, revealTimer = 0;
 
@@ -246,7 +246,8 @@ function fxLoop(now) {
 
 // ---------- start / ouder-knop ----------
 function start() { document.getElementById('title').classList.add('hidden'); initAudio(); newRound(); }
-document.getElementById('start').addEventListener('click', start);
+// pointerup i.p.v. click: een tik die een beetje schuift telt ook (en geluid mag starten)
+document.getElementById('start').addEventListener('pointerup', start);
 const home = document.getElementById('home'); let homeTimer = 0;
 home.addEventListener('pointerdown', () => { home.classList.add('hold'); homeTimer = setTimeout(() => location.href = '../../index.html', 900); });
 ['pointerup', 'pointerleave', 'pointercancel'].forEach(ev => home.addEventListener(ev, () => { home.classList.remove('hold'); clearTimeout(homeTimer); }));

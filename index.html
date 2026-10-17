@@ -50,6 +50,7 @@
     line-height: 1;
     box-shadow: 0 8px 0 rgb(0 0 0 / .15);
     cursor: pointer;
+    touch-action: none;   /* slepen op een tegel scrollt niet, zodat de tik niet wegvalt */
     transition: transform .1s, box-shadow .1s;
   }
   .tile:active {
@@ -94,8 +95,16 @@
     tile.textContent = g.icon;
     if (g.href) {
       tile.href = g.href;
+      // Openen bij loslaten, ook als de vinger een beetje schuift (een gewone click valt dan weg)
+      let down = null;
+      tile.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY }; });
+      tile.addEventListener('pointerup', e => {
+        if (down && Math.hypot(e.clientX - down.x, e.clientY - down.y) < 60) location.href = g.href;
+        down = null;
+      });
+      tile.addEventListener('pointercancel', () => { down = null; });
     } else {
-      tile.addEventListener('click', () => {
+      tile.addEventListener('pointerdown', () => {
         tile.classList.remove('wiggle');
         void tile.offsetWidth;
         tile.classList.add('wiggle');
