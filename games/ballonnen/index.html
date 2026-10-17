@@ -1,0 +1,423 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Ballonnen</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; height: 100%; overflow: hidden; background: #bfe6ff; color: #3a2e5c;
+    overscroll-behavior: none; touch-action: none;
+    user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+    font-family: ui-rounded, "Nunito", system-ui, sans-serif;
+  }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  .overlay {
+    position: fixed; inset: 0; z-index: 10; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 2vmin; background: rgb(255 246 224 / .93); text-align: center;
+  }
+  .overlay.hidden { display: none; }
+  .icons { font-size: min(16vmin, 110px); letter-spacing: 2vmin; }
+  #start {
+    width: min(34vmin, 190px); height: min(34vmin, 190px); border-radius: 50%; border: 0;
+    background: #4cc35a; color: #fff; font-size: min(18vmin, 100px); padding-left: 1vmin;
+    box-shadow: 0 1.4vmin 0 #2f8f3b; cursor: pointer; animation: pulse 1.2s infinite;
+  }
+  #start:active { transform: translateY(1vmin); box-shadow: 0 .3vmin 0 #2f8f3b; }
+  @keyframes pulse { 50% { transform: scale(1.06); } }
+  #rotate { display: none; z-index: 20; background: #fff6e0; }
+  #rotate .tilt { display: inline-block; animation: turn 2s ease-in-out infinite; font-size: 30vw; }
+  #rotate p { font-size: 6vw; margin: 0; }
+  @keyframes turn { 0%, 30% { transform: rotate(0); } 70%, 100% { transform: rotate(-90deg); } }
+  @media (orientation: portrait) { #rotate { display: flex; } }
+  #home {
+    position: fixed; top: max(8px, env(safe-area-inset-top)); right: max(8px, env(safe-area-inset-right)); z-index: 15;
+    width: 48px; height: 48px; border-radius: 50%; border: 0; background: rgb(255 255 255 / .5);
+    font-size: 24px; opacity: .6; padding: 0; touch-action: none;
+  }
+  #home::after {
+    content: ""; position: absolute; inset: -3px; border-radius: 50%;
+    border: 4px solid #3a2e5c; opacity: 0; clip-path: inset(0 100% 0 0);
+  }
+  #home.hold::after { opacity: 1; clip-path: inset(0 0 0 0); transition: clip-path .9s linear; }
+  @media (prefers-reduced-motion: reduce) { #start, #rotate .tilt { animation: none; } }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<button id="home" aria-label="Terug">🏠</button>
+
+<div class="overlay" id="title">
+  <div class="icons">🎈🎈🎈</div>
+  <button id="start" aria-label="Start">▶</button>
+  <div class="icons">👆</div>
+</div>
+
+<div class="overlay" id="rotate">
+  <div class="tilt">📱</div>
+  <p>Draai je telefoon</p>
+</div>
+
+<script>
+'use strict';
+
+const COLORS = [
+  { id: 'rood', fill: '#f2463f', dark: '#b5231d' },
+  { id: 'blauw', fill: '#3b8cff', dark: '#1f5cc2' },
+  { id: 'groen', fill: '#3fc35a', dark: '#23893a' },
+  { id: 'oranje', fill: '#ff8a1f', dark: '#c45a00' },
+  { id: 'paars', fill: '#a35cf0', dark: '#6f2fb8' },
+];
+const GOLD = { id: 'goud', fill: '#ffc93c', dark: '#b8860b', gold: true };
+const NEEDED = 5;              // zoveel goede ballonnen vullen de balk
+const MAX_BALLOONS = 9;
+const GOLD_CHANCE = .05;       // kans per nieuwe ballon
+const GOLD_COOLDOWN = 12;      // seconden minimaal tussen twee gouden
+
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const rnd = (a, b) => a + Math.random() * (b - a);
+const pick = a => a[Math.floor(Math.random() * a.length)];
+
+// ---------- geluid ----------
+let AC = null, master = null;
+function initAudio() {
+  try {
+    AC = new (window.AudioContext || window.webkitAudioContext)();
+    const comp = AC.createDynamicsCompressor(); master = AC.createGain(); master.gain.value = .8;
+    master.connect(comp); comp.connect(AC.destination);
+    AC.resume();
+    // iOS: stil audio-element, zodat het geluid ook klinkt met de stilteknop aan
+    const a = new Audio('data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAAA');
+    a.loop = true; a.play().catch(() => {});
+  } catch (e) { AC = null; }
+}
+function tone(f0, f1, dur, vol, type = 'sine', delay = 0) {
+  if (!AC) return;
+  const t = AC.currentTime + delay, o = AC.createOscillator(), g = AC.createGain();
+  o.type = type; o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(f1, t + dur);
+  g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(.001, t + dur);
+  o.connect(g); g.connect(master); o.start(t); o.stop(t + dur);
+}
+function noise(dur, vol, freq) {
+  if (!AC) return;
+  const t = AC.currentTime, len = Math.ceil(AC.sampleRate * dur), buf = AC.createBuffer(1, len, AC.sampleRate), d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3);
+  const src = AC.createBufferSource(), f = AC.createBiquadFilter(), g = AC.createGain();
+  src.buffer = buf; f.type = 'bandpass'; f.frequency.value = freq; f.Q.value = .8; g.gain.value = vol;
+  src.connect(f); f.connect(g); g.connect(master); src.start(t);
+}
+const sfx = {
+  pop() { const f = rnd(500, 700); tone(f, f * .25, .09, .5, 'sine'); noise(.05, .5, 2500); },   // plop
+  fill(n) { const f = 440 * Math.pow(2, [0, 2, 4, 5, 7, 9, 11][n % 7] / 12); tone(f, f * 1.01, .25, .2, 'triangle', .05); },
+  wrong() { tone(260, 200, .18, .15, 'sine'); tone(200, 260, .18, .12, 'sine', .14); },
+  gold() { [784, 988, 1175, 1568, 1976].forEach((f, i) => tone(f, f, .3, .14, 'sine', i * .06)); },
+  win() { [523, 659, 784, 1047, 1319].forEach((f, i) => tone(f, f, .35, .2, 'triangle', i * .12)); },
+};
+// ---------- scherm ----------
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+let W = 0, H = 0, PANEL = 0, R = 0;      // R = straal van een ballon
+function resize() {
+  W = innerWidth; H = innerHeight;
+  cv.width = W * devicePixelRatio; cv.height = H * devicePixelRatio;
+  PANEL = Math.max(90, Math.min(W * .17, 150));
+  R = Math.max(34, Math.min(H * .11, W * .07, 64));
+}
+addEventListener('resize', resize); resize();
+
+// ---------- spel ----------
+const G = {
+  phase: 'title',              // title | play | party
+  target: COLORS[0], filled: 0, shown: 0,   // shown = geanimeerde vulling
+  balloons: [], parts: [], confetti: [],
+  spawnT: 0, goldT: GOLD_COOLDOWN, partyT: 0, time: 0, targetBob: 0,
+};
+
+function newTarget() {
+  G.target = pick(COLORS.filter(c => c !== G.target));
+  G.filled = 0; G.shown = 0; G.targetBob = 1;
+}
+
+function spawn() {
+  const onScreen = G.balloons.filter(b => !b.popped);
+  if (onScreen.length >= MAX_BALLOONS) return;
+  let color;
+  const hasGold = onScreen.some(b => b.color.gold);
+  if (G.phase === 'play' && !hasGold && G.goldT <= 0 && Math.random() < GOLD_CHANCE) { color = GOLD; G.goldT = GOLD_COOLDOWN; }
+  else if (!onScreen.some(b => b.color === G.target) || Math.random() < .35) color = G.target;   // doelkleur altijd in beeld
+  else color = pick(COLORS);
+  // plek kiezen die niet te dicht bij net gestarte ballonnen ligt
+  const x0 = PANEL + R * 1.3, x1 = W - R * 1.3;
+  let x = rnd(x0, x1);
+  for (let tries = 0; tries < 8; tries++) {
+    if (!onScreen.some(b => b.y > H - R * 3 && Math.abs(b.x - x) < R * 2.3)) break;
+    x = rnd(x0, x1);
+  }
+  const travel = color.gold ? rnd(5, 6) : rnd(4.5, 10);   // seconden om het scherm over te steken
+  G.balloons.push({
+    color, x, baseX: x, y: H + R * 1.6, speed: (H + R * 4) / travel,
+    phase: rnd(0, 6.3), sway: rnd(4, 12), wob: 0, popped: false, r: R * (color.gold ? 1.05 : rnd(.9, 1.1)),
+  });
+}
+
+function hit(x, y) {
+  if (G.phase === 'title') return;
+  if (x < PANEL) { if (y < H * .3) G.targetBob = 1; return; }   // doel-ballon aantikken = wiebelen
+  let best = null, bd = Infinity;
+  for (const b of G.balloons) {
+    if (b.popped) continue;
+    const dx = x - b.x, dy = (y - (b.y - b.r * .1)) / 1.2, d = Math.hypot(dx, dy);
+    if (d < b.r * 1.35 && d < bd) { best = b; bd = d; }
+  }
+  if (best) tapBalloon(best);
+}
+
+function tapBalloon(b) {
+  const good = b.color === G.target || b.color.gold;
+  if (G.phase === 'party' || good) {
+    pop(b);
+    if (G.phase !== 'play') return;
+    if (b.color.gold) { G.filled = NEEDED; sfx.gold(); sparkle(b.x, b.y); }
+    else { G.filled++; sfx.fill(G.filled); }
+    if (G.filled >= NEEDED) startParty();
+  } else {
+    b.wob = 1; sfx.wrong();                   // verkeerde kleur: ballon wiebelt alleen
+  }
+}
+
+function pop(b) {
+  b.popped = true; sfx.pop();
+  const n = reduceMotion ? 8 : 18;
+  for (let i = 0; i < n; i++) {
+    const a = rnd(0, Math.PI * 2), s = rnd(80, 260);
+    G.parts.push({ x: b.x, y: b.y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: rnd(.4, .7), t: 0, c: b.color.fill, sz: rnd(4, 9) });
+  }
+}
+function sparkle(x, y) {
+  for (let i = 0; i < 24; i++) {
+    const a = rnd(0, Math.PI * 2), s = rnd(60, 220);
+    G.parts.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: rnd(.6, 1.1), t: 0, c: pick(['#fff6b0', '#ffd23a', '#ffffff']), sz: rnd(5, 10), star: true });
+  }
+}
+
+function startParty() {
+  G.phase = 'party'; G.partyT = 2.8;
+  sfx.win(); confettiBurst();
+}
+
+function confettiBurst() {
+  const colors = ['#ff5c5c', '#ffd23f', '#4cc35a', '#4aa8ff', '#c77dff', '#ff9f43'];
+  const n = reduceMotion ? 50 : 140;
+  for (let i = 0; i < n; i++) G.confetti.push({ x: rnd(0, W), y: rnd(-H * .3, 0), vx: rnd(-60, 60), vy: rnd(120, 360), r: rnd(0, 6), vr: rnd(-8, 8), w: rnd(8, 14), h: rnd(5, 9), c: pick(colors) });
+}
+
+function update(dt) {
+  G.time += dt;
+  G.goldT -= dt;
+  G.targetBob = Math.max(0, G.targetBob - dt * 1.5);
+  G.shown += (G.filled - G.shown) * Math.min(1, dt * 8);
+  if (G.phase === 'title') return;
+  G.spawnT -= dt;
+  if (G.spawnT <= 0) { spawn(); G.spawnT = rnd(.6, 1.2); }
+  for (const b of G.balloons) {
+    if (b.popped) continue;
+    b.y -= b.speed * dt;
+    b.wob = Math.max(0, b.wob - dt * 1.8);
+    b.x = b.baseX + Math.sin(G.time * 1.3 + b.phase) * b.sway + Math.sin(b.wob * 18) * b.wob * 14;
+  }
+  G.balloons = G.balloons.filter(b => !b.popped && b.y > -b.r * 4);
+  for (const p of G.parts) { p.t += dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 300 * dt; p.vx *= .97; }
+  G.parts = G.parts.filter(p => p.t < p.life);
+  for (const p of G.confetti) { p.vy = Math.min(p.vy + 300 * dt, 380); p.x += (p.vx + Math.sin(p.r * 2) * 50) * dt; p.y += p.vy * dt; p.r += p.vr * dt; }
+  G.confetti = G.confetti.filter(p => p.y < H + 30);
+  if (G.phase === 'party') {
+    G.partyT -= dt;
+    if (G.partyT <= 0) { G.phase = 'play'; newTarget(); }
+  }
+}
+
+// ---------- tekenen ----------
+function balloonPath(x, y, r) {
+  ctx.beginPath();
+  ctx.moveTo(x, y + r * 1.15);
+  ctx.bezierCurveTo(x - r * .55, y + r * .9, x - r, y + r * .35, x - r, y - r * .15);
+  ctx.bezierCurveTo(x - r, y - r * .8, x - r * .55, y - r * 1.15, x, y - r * 1.15);
+  ctx.bezierCurveTo(x + r * .55, y - r * 1.15, x + r, y - r * .8, x + r, y - r * .15);
+  ctx.bezierCurveTo(x + r, y + r * .35, x + r * .55, y + r * .9, x, y + r * 1.15);
+  ctx.closePath();
+}
+function drawBalloon(x, y, r, color, tilt = 0) {
+  ctx.save(); ctx.translate(x, y); ctx.rotate(tilt);
+  // touwtje
+  ctx.strokeStyle = 'rgb(58 46 92 / .45)'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(0, r * 1.2);
+  ctx.bezierCurveTo(r * .25, r * 1.6, -r * .25, r * 2, r * .05, r * 2.5); ctx.stroke();
+  // knoopje
+  ctx.fillStyle = color.dark;
+  ctx.beginPath(); ctx.moveTo(0, r * 1.1); ctx.lineTo(-r * .14, r * 1.28); ctx.lineTo(r * .14, r * 1.28); ctx.closePath(); ctx.fill();
+  if (color.gold) {   // gloed
+    const halo = ctx.createRadialGradient(0, 0, r * .6, 0, 0, r * 1.9);
+    halo.addColorStop(0, `rgb(255 235 120 / ${.55 + Math.sin(G.time * 5) * .2})`); halo.addColorStop(1, 'rgb(255 235 120 / 0)');
+    ctx.fillStyle = halo; ctx.beginPath(); ctx.arc(0, 0, r * 1.9, 0, 7); ctx.fill();
+  }
+  // ballon
+  balloonPath(0, 0, r);
+  if (color.gold) {
+    const g = ctx.createLinearGradient(-r, -r, r, r);
+    g.addColorStop(0, '#fff3a6'); g.addColorStop(.4, '#ffcc33'); g.addColorStop(.75, '#e0a100'); g.addColorStop(1, '#ffe27a');
+    ctx.fillStyle = g;
+  } else {
+    const g = ctx.createRadialGradient(-r * .3, -r * .4, r * .1, 0, 0, r * 1.2);
+    g.addColorStop(0, color.fill); g.addColorStop(1, color.dark);
+    ctx.fillStyle = g;
+  }
+  ctx.fill();
+  // glans
+  ctx.fillStyle = 'rgb(255 255 255 / .55)';
+  ctx.beginPath(); ctx.ellipse(-r * .4, -r * .5, r * .16, r * .3, -.5, 0, Math.PI * 2); ctx.fill();
+  if (color.gold) {   // twinkelende sterretjes
+    const tw = (Math.sin(G.time * 6) + 1) / 2;
+    star(r * .45, -r * .6, r * .18 * (.6 + tw * .4), '#fff');
+    star(-r * .2, r * .45, r * .12 * (1 - tw * .4), '#fff');
+  }
+  ctx.restore();
+}
+function star(x, y, s, c) {
+  ctx.fillStyle = c; ctx.beginPath();
+  for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4, l = i % 2 ? s * .35 : s; ctx.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l); }
+  ctx.closePath(); ctx.fill();
+}
+function roundRect(x, y, w, h, r) {
+  ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+}
+
+function drawPanel() {
+  ctx.fillStyle = 'rgb(255 255 255 / .55)';
+  roundRect(-20, -20, PANEL + 20, H + 40, 28); ctx.fill();
+  const cx = PANEL / 2;
+  // doel-ballon bovenaan
+  const tr = Math.min(PANEL * .3, H * .085);
+  const bob = reduceMotion ? 0 : Math.sin(G.targetBob * Math.PI * 3) * G.targetBob * .3;
+  const ty = tr * 1.4 + 10 + (reduceMotion ? 0 : Math.sin(G.time * 2) * 3);
+  drawBalloon(cx, ty, tr, G.target, bob);
+  // balk
+  const bw = Math.min(PANEL * .5, 70), bx = cx - bw / 2, by = ty + tr * 2.7, bh = H - by - 14;
+  ctx.fillStyle = '#fff'; roundRect(bx, by, bw, bh, bw / 2); ctx.fill();
+  ctx.lineWidth = 4; ctx.strokeStyle = G.target.dark; ctx.stroke();
+  const frac = Math.min(1, G.shown / NEEDED), inner = 6, fh = (bh - inner * 2) * frac;
+  if (fh > 1) {
+    ctx.save(); roundRect(bx + inner, by + inner, bw - inner * 2, bh - inner * 2, (bw - inner * 2) / 2); ctx.clip();
+    const party = G.phase === 'party';
+    ctx.fillStyle = party ? `hsl(${(G.time * 200) % 360} 85% 60%)` : G.target.fill;
+    if (party && reduceMotion) ctx.fillStyle = G.target.fill;
+    ctx.fillRect(bx, by + bh - inner - fh, bw, fh);
+    ctx.fillStyle = 'rgb(255 255 255 / .35)'; ctx.fillRect(bx + inner + 4, by + bh - inner - fh, 6, fh);
+    ctx.restore();
+  }
+  // streepjes per stap
+  ctx.strokeStyle = 'rgb(58 46 92 / .18)'; ctx.lineWidth = 2;
+  for (let i = 1; i < NEEDED; i++) {
+    const y = by + inner + (bh - inner * 2) * (1 - i / NEEDED);
+    ctx.beginPath(); ctx.moveTo(bx + inner + 2, y); ctx.lineTo(bx + bw - inner - 2, y); ctx.stroke();
+  }
+}
+
+function drawSky() {
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, '#9fd8ff'); g.addColorStop(1, '#e6f6ff');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  // wolkjes
+  ctx.fillStyle = 'rgb(255 255 255 / .8)';
+  for (let i = 0; i < 4; i++) {
+    const s = H * .06, span = W + s * 8;
+    const x = ((i * 0.27 * span + G.time * (8 + i * 3)) % span) - s * 4, y = H * (.15 + i * .2);
+    ctx.beginPath(); ctx.arc(x, y, s, 0, 7); ctx.arc(x + s * 1.1, y - s * .4, s * 1.2, 0, 7); ctx.arc(x + s * 2.3, y, s, 0, 7); ctx.fill();
+  }
+}
+
+function draw() {
+  ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+  drawSky();
+  for (const b of G.balloons) drawBalloon(b.x, b.y, b.r, b.color, Math.sin(G.time * 1.3 + b.phase) * .06 + Math.sin(b.wob * 18) * b.wob * .25);
+  for (const p of G.parts) {
+    ctx.globalAlpha = 1 - p.t / p.life;
+    if (p.star) star(p.x, p.y, p.sz, p.c);
+    else { ctx.fillStyle = p.c; ctx.beginPath(); ctx.arc(p.x, p.y, p.sz, 0, 7); ctx.fill(); }
+  }
+  ctx.globalAlpha = 1;
+  drawPanel();
+  for (const p of G.confetti) {
+    ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.r); ctx.fillStyle = p.c; ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h); ctx.restore();
+  }
+  if (G.phase === 'party') {   // grote feestballon in het midden
+    const t = 2.8 - G.partyT, s = Math.min(1, t * 3) * (reduceMotion ? 1 : 1 + Math.sin(t * 8) * .05);
+    drawBalloon(PANEL + (W - PANEL) / 2, H * .45, H * .2 * s, G.target, reduceMotion ? 0 : Math.sin(t * 5) * .1);
+    ctx.save(); ctx.font = `${H * .16}px serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('🎉', PANEL + (W - PANEL) / 2 - H * .35, H * .4); ctx.fillText('🎉', PANEL + (W - PANEL) / 2 + H * .35, H * .4);
+    ctx.restore();
+  }
+}
+
+// ---------- invoer ----------
+cv.addEventListener('pointerdown', e => { e.preventDefault(); if (AC) AC.resume(); hit(e.clientX, e.clientY); });
+
+// ---------- start / ouder-knop ----------
+function startGame() {
+  document.getElementById('title').classList.add('hidden');
+  initAudio();
+  try {
+    if (matchMedia('(pointer: coarse)').matches) {
+      const p = document.documentElement.requestFullscreen && document.documentElement.requestFullscreen();
+      if (p && p.then) p.then(() => screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape')).catch(() => {});
+    }
+  } catch (e) {}
+  G.phase = 'play'; G.balloons = []; G.spawnT = 0;
+  newTarget();
+}
+document.getElementById('start').addEventListener('click', startGame);
+const home = document.getElementById('home'); let homeTimer = 0;
+home.addEventListener('pointerdown', () => { home.classList.add('hold'); homeTimer = setTimeout(() => location.href = '../../index.html', 900); });
+['pointerup', 'pointerleave', 'pointercancel'].forEach(ev => home.addEventListener(ev, () => { home.classList.remove('hold'); clearTimeout(homeTimer); }));
+document.addEventListener('contextmenu', e => e.preventDefault());
+document.addEventListener('visibilitychange', () => { if (AC) { if (document.hidden) AC.suspend(); else AC.resume(); } });
+
+// ---------- lus ----------
+let last = performance.now();
+const portrait = matchMedia('(orientation: portrait)');
+// achter het startscherm drijven alvast ballonnen
+G.target = pick(COLORS);
+function frame(now) {
+  const dt = Math.min((now - last) / 1000, 1 / 20); last = now;
+  if (!portrait.matches) {
+    if (G.phase === 'title') { G.phase = 'demo'; }
+    update(dt);
+  }
+  draw();
+  requestAnimationFrame(frame);
+}
+
+// testmodus: ?auto simuleert een tijdje spelen en logt het resultaat in de titel
+if (/[?&]auto/.test(location.search)) {
+  document.getElementById('title').classList.add('hidden');
+  G.phase = 'play'; newTarget();
+  const log = []; let rounds = 0, golds = 0, wrongs = 0, prev = G.target;
+  for (let i = 0; i < 30 * 240; i++) {
+    update(1 / 30);
+    if (G.target !== prev) { rounds++; prev = G.target; }
+    if (G.phase === 'play' && i % 20 === 0) {
+      const vis = G.balloons.filter(b => b.y < H - b.r && b.y > b.r);
+      const b = vis.find(b => b.color.gold) || vis.find(b => b.color === G.target);
+      const w = vis.find(b => b.color !== G.target && !b.color.gold);
+      if (w && i % 60 === 0) { const f = G.filled; tapBalloon(w); if (G.filled !== f || w.popped) log.push('FOUT:verkeerde knapte'); wrongs++; }
+      if (b) { if (b.color.gold) golds++; const f = G.filled; tapBalloon(b); if (!b.popped || (G.phase === 'play' && G.filled !== f + 1 && !b.color.gold)) log.push('FOUT:goede'); }
+    }
+  }
+  document.title = `rondes=${rounds} goud=${golds} fout-getikt=${wrongs} ` + (log.length ? log.join(',') : 'ok');
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
