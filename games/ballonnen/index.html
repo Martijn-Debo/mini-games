@@ -155,7 +155,7 @@ function spawn() {
     if (!onScreen.some(b => b.y > H - R * 3 && Math.abs(b.x - x) < R * 2.3)) break;
     x = rnd(x0, x1);
   }
-  const travel = color.gold ? rnd(5, 6) : rnd(4.1, 10);   // seconden om het scherm over te steken
+  const travel = color.gold ? rnd(4.5, 5.5) : rnd(3.4, 9.1);   // seconden om het scherm over te steken
   G.balloons.push({
     color, x, baseX: x, y: H + R * 1.6, speed: (H + R * 4) / travel,
     phase: rnd(0, 6.3), sway: rnd(4, 12), wob: 0, popped: false, r: R * (color.gold ? 1.05 : rnd(.9, 1.1)),
