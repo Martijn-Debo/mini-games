@@ -3,6 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Spelletjes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#ffd76a">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <title>Spelletjes</title>
 <style>
   :root {
@@ -112,6 +119,18 @@
     }
     grid.appendChild(tile);
   }
+  document.addEventListener('contextmenu', e => e.preventDefault());
+
+  // ---------- app-modus ----------
+  // Terug-knop/-veeggebaar (Android) doet niets: er staat steeds een extra geschiedenis-stap klaar
+  // die 'terug' opvangt. Chrome negeert stappen die zonder tik zijn gezet, dus zetten we hem bij een tik.
+  if (matchMedia('(pointer: coarse)').matches && !/[?&](auto|sim)/.test(location.search)) {
+    let armed = false;
+    addEventListener('pointerdown', () => { if (!armed) { history.pushState({ guard: 1 }, ''); armed = true; } }, true);
+    addEventListener('popstate', () => history.pushState({ guard: 1 }, ''));
+  }
+  // Offline spelen en installeren als app
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 </script>
 </body>
 </html>

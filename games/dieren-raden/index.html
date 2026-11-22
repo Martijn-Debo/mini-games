@@ -5,6 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#ffd76a">
+<link rel="manifest" href="../../manifest.webmanifest">
+<link rel="apple-touch-icon" href="../../icons/apple-touch-icon.png">
 <title>Welk dier klopt niet?</title>
 <style>
   :root { --ink: #3a2e5c; }
@@ -260,17 +264,31 @@ function start() {
   // Staand vastzetten (lukt op Android via volledig scherm; iOS negeert het en toont dan het draai-scherm)
   try {
     if (matchMedia('(pointer: coarse)').matches) {
-      const p = document.documentElement.requestFullscreen && document.documentElement.requestFullscreen();
-      if (p && p.then) p.then(() => screen.orientation && screen.orientation.lock && screen.orientation.lock('portrait')).catch(() => {});
+      // Als geïnstalleerde app is het scherm al vol; volledig-scherm erbovenop zou 'terug' laten afsluiten
+      const lock = () => screen.orientation && screen.orientation.lock && screen.orientation.lock('portrait');
+      const app = matchMedia('(display-mode: fullscreen), (display-mode: standalone)').matches;
+      const p = app ? lock() : document.documentElement.requestFullscreen && document.documentElement.requestFullscreen();
+      if (p && p.then) p.then(app ? null : lock).catch(() => {});
     }
   } catch (e) {}
 }
 // pointerup i.p.v. click: een tik die een beetje schuift telt ook (en geluid mag starten)
 document.getElementById('start').addEventListener('pointerup', start);
 const home = document.getElementById('home'); let homeTimer = 0;
-home.addEventListener('pointerdown', () => { home.classList.add('hold'); homeTimer = setTimeout(() => location.href = '../../index.html', 900); });
+home.addEventListener('pointerdown', () => { home.classList.add('hold'); homeTimer = setTimeout(() => location.replace('../../index.html'), 900); });
 ['pointerup', 'pointerleave', 'pointercancel'].forEach(ev => home.addEventListener(ev, () => { home.classList.remove('hold'); clearTimeout(homeTimer); }));
 document.addEventListener('contextmenu', e => e.preventDefault());
+
+// ---------- app-modus ----------
+// Terug-knop/-veeggebaar (Android) doet niets: er staat steeds een extra geschiedenis-stap klaar
+// die 'terug' opvangt. Chrome negeert stappen die zonder tik zijn gezet, dus zetten we hem bij een tik.
+if (matchMedia('(pointer: coarse)').matches && !/[?&](auto|sim)/.test(location.search)) {
+  let armed = false;
+  addEventListener('pointerdown', () => { if (!armed) { history.pushState({ guard: 1 }, ''); armed = true; } }, true);
+  addEventListener('popstate', () => history.pushState({ guard: 1 }, ''));
+}
+// Offline spelen en installeren als app
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('../../sw.js').catch(() => {});
 document.addEventListener('visibilitychange', () => { if (AC) { if (document.hidden) AC.suspend(); else AC.resume(); } });
 newRound();   // achtergrond achter het startscherm
 

@@ -8,6 +8,7 @@ Verzameling kleine spelletjes voor peuters/kleuters. Elk spel staat op zichzelf.
 - Standaard: één `index.html` met inline CSS en JS, zonder build-stap of externe afhankelijkheden, zodat het offline werkt en direct te openen is.
 - Wijk hiervan alleen af als het spel er echt om vraagt (bv. een framework of meerdere bestanden voor assets).
 - `index.html` in de root is een simpel overzicht met grote knoppen/plaatjes naar elk spel.
+- Het geheel is een PWA (`manifest.webmanifest`, `sw.js`, `icons/`). Nieuw spel of nieuwe bestanden: toevoegen aan `FILES` in `sw.js` en `VERSION` verhogen, anders werkt het niet offline. Kopieer in een nieuw spel ook de manifest-links in `<head>` en het blok `app-modus` (terug-knop doet niets, service worker registreren) uit een bestaand spel.
 
 ## Doelgroep en ontwerp
 - Primair gebruikt op een mobieltje (touch, staand scherm). Desktop hoeft alleen te werken, niet mooi te zijn.
